@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import heroImage from './assets/hero.png'
 import './App.css'
 
 const apiURL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'
@@ -106,6 +107,8 @@ type Session = {
   }
 }
 
+type View = 'hq' | 'buildings' | 'tenants' | 'contracts' | 'invoices'
+
 function App() {
   const [session, setSession] = useState<Session | null>(() => {
     const stored = localStorage.getItem('masco-session')
@@ -125,6 +128,9 @@ function App() {
   const [documentContractID, setDocumentContractID] = useState('')
   const [documentName, setDocumentName] = useState('')
   const [documentFile, setDocumentFile] = useState<File | null>(null)
+  const [view, setView] = useState<View>('hq')
+  const [selectedBuildingID, setSelectedBuildingID] = useState('hq')
+  const [formError, setFormError] = useState('')
 
   const apiFetch = (path: string, options: RequestInit = {}) => fetch(`${apiURL}${path}`, {
     ...options,
@@ -202,6 +208,8 @@ function App() {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
 
+    setFormError('')
+
     const response = await apiFetch('/buildings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -214,6 +222,10 @@ function App() {
     if (response.ok) {
       await loadData()
       setForm(defaultForm)
+      setView('hq')
+    } else {
+      const error = await response.json().catch(() => ({ error: 'Could not save building.' })) as { error?: string }
+      setFormError(error.error ?? 'Could not save building.')
     }
   }
 
@@ -297,17 +309,39 @@ function App() {
   if (!session) {
     return (
       <main className="login-shell">
+        <section className="login-story">
+          <div className="login-brand"><span className="brand-mark">M</span><span>Masco<span>Rent</span></span></div>
+          <div className="story-copy">
+            <p className="eyebrow">Property operations</p>
+            <h1>Every building,<br />under control.</h1>
+            <p>One quiet workspace for occupancy, tenants, contracts, and the details that keep each property moving.</p>
+          </div>
+          <img className="login-illustration" src={heroImage} alt="Layered building platform" />
+          <p className="story-footer">MASCO APARTMENTS</p>
+        </section>
         <form className="login-panel" onSubmit={handleLogin}>
-          <div className="brand"><span className="brand-mark">M</span><span>Masco<span className="brand-muted">Rent</span></span></div>
-          <h1>Sign in</h1>
-          <p>Property and rental management</p>
-          <label>Username or email<input value={loginForm.username} onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))} autoComplete="username" required /></label>
-          <label>Password<input type="password" value={loginForm.password} onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))} autoComplete="current-password" required /></label>
+          <div className="login-heading"><p className="eyebrow">Welcome back</p><h1>Sign in to your workspace</h1><p>Use your MascoRent account to continue.</p></div>
+          <label>Username or email<input value={loginForm.username} onChange={(event) => setLoginForm((current) => ({ ...current, username: event.target.value }))} autoComplete="username" placeholder="name@company.com" required /></label>
+          <label>Password<input type="password" value={loginForm.password} onChange={(event) => setLoginForm((current) => ({ ...current, password: event.target.value }))} autoComplete="current-password" placeholder="Enter your password" required /></label>
           {loginError && <p className="form-error">{loginError}</p>}
           <button className="primary-button" type="submit">Sign in</button>
         </form>
       </main>
     )
+  }
+
+  const selectedBuilding = buildings.find((building) => building.id === selectedBuildingID)
+  const pageTitle: Record<View, string> = {
+    hq: 'HQ overview',
+    buildings: 'Buildings',
+    tenants: 'Tenants',
+    contracts: 'Contracts',
+    invoices: 'Invoices',
+  }
+
+  const showView = (nextView: View) => {
+    setFormError('')
+    setView(nextView)
   }
 
   return (
@@ -316,22 +350,29 @@ function App() {
         <div className="brand"><span className="brand-mark">M</span><span>Masco<span className="brand-muted">Rent</span></span></div>
         <p className="user-name">{session.user.full_name}</p>
         <nav className="nav">
-          <a className="nav-link" href="#dashboard">Dashboard</a>
-          <a className="nav-link active" href="#buildings">Buildings</a>
-          <a className="nav-link" href="#tenants">Tenants</a>
-          <a className="nav-link" href="#contracts">Contracts</a>
-          <a className="nav-link" href="#invoices">Invoices</a>
+          <button className={`nav-link ${view === 'hq' ? 'active' : ''}`} onClick={() => showView('hq')}>HQ overview</button>
+          <button className={`nav-link ${view === 'buildings' ? 'active' : ''}`} onClick={() => showView('buildings')}>Buildings</button>
+          <button className={`nav-link ${view === 'tenants' ? 'active' : ''}`} onClick={() => showView('tenants')}>Tenants</button>
+          <button className={`nav-link ${view === 'contracts' ? 'active' : ''}`} onClick={() => showView('contracts')}>Contracts</button>
+          <button className={`nav-link ${view === 'invoices' ? 'active' : ''}`} onClick={() => showView('invoices')}>Invoices</button>
         </nav>
       </aside>
 
       <section className="content">
-        <header className="topbar" id="dashboard">
+        <header className="topbar">
           <div>
-            <p className="eyebrow">Operations overview</p>
-            <h1>Portfolio dashboard</h1>
+            <p className="eyebrow">{selectedBuilding ? selectedBuilding.code : 'All buildings'}</p>
+            <h1>{pageTitle[view]}</h1>
           </div>
+          <label className="building-switcher">Portfolio context
+            <select value={selectedBuildingID} onChange={(event) => setSelectedBuildingID(event.target.value)}>
+              <option value="hq">HQ - all buildings</option>
+              {buildings.map((building) => <option key={building.id} value={building.id}>{building.name}</option>)}
+            </select>
+          </label>
         </header>
 
+        {view === 'hq' && <>
         <div className="stats-grid">
           <div className="stat-card"><span>Buildings</span><strong>{stats.buildings}</strong></div>
           <div className="stat-card"><span>Floors</span><strong>{stats.floors}</strong></div>
@@ -340,8 +381,10 @@ function App() {
           <div className="stat-card"><span>Contracts</span><strong>{stats.contracts}</strong></div>
           <div className="stat-card"><span>Invoices</span><strong>{stats.invoices}</strong></div>
         </div>
+        <div className="panel overview-panel"><h2>{selectedBuilding ? selectedBuilding.name : 'Portfolio status'}</h2><p>Use the building selector to review a property context, or choose a workspace from the sidebar to manage records.</p></div>
+        </>}
 
-        <div className="panel-grid" id="buildings">
+        {view === 'buildings' && <div className="panel-grid">
           <form className="panel form-panel" onSubmit={handleSubmit}>
             <h2>Add building</h2>
             <label>
@@ -375,6 +418,7 @@ function App() {
               </label>
             </div>
             <button className="primary-button" type="submit">Save building</button>
+            {formError && <p className="form-error">{formError}</p>}
           </form>
 
           <div className="panel list-panel">
@@ -403,8 +447,9 @@ function App() {
             </div>
           </div>
         </div>
+        }
 
-        <div className="panel-grid" id="tenants">
+        {view === 'tenants' && <div className="panel-grid">
           <form className="panel form-panel" onSubmit={handleTenantSubmit}>
             <h2>Add tenant</h2>
             <label>
@@ -473,8 +518,10 @@ function App() {
             </div>
           </div>
         </div>
+        }
 
-        <div className="panel-grid" id="contracts">
+        {view === 'contracts' && <>
+        <div className="panel-grid">
           <form className="panel form-panel" onSubmit={handleContractSubmit}>
             <h2>Add contract</h2>
             <label>
@@ -583,7 +630,7 @@ function App() {
           </div>
         </div>
 
-        <div className="panel-grid" id="documents">
+        <div className="panel-grid">
           <form className="panel form-panel" onSubmit={handleDocumentSubmit}>
             <h2>Attach signed contract</h2>
             <label>
@@ -608,8 +655,9 @@ function App() {
             <p className="empty-state">Select a contract and attach the signed residential or commercial lease. Files are stored securely in the backend uploads directory.</p>
           </div>
         </div>
+        </>}
 
-        <div className="panel-grid" id="invoices">
+        {view === 'invoices' && <div className="panel-grid">
           <form className="panel form-panel" onSubmit={handleInvoiceSubmit}>
             <h2>Add invoice</h2>
             <label>
@@ -678,6 +726,7 @@ function App() {
             </div>
           </div>
         </div>
+        }
       </section>
     </main>
   )
