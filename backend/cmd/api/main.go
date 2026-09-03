@@ -35,7 +35,7 @@ func main() {
 	handler.RegisterRoutes(mux)
 
 	server := &http.Server{
-		Addr:    ":8080",
+		Addr:    ":" + envOrDefault("API_PORT", "6400"),
 		Handler: withCORS(requireAuth(authService, mux)),
 	}
 
