@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -20,14 +21,25 @@ func (s *MySQLService) CreateBuilding(building Building) (*Building, error) {
 	if building.Name == "" || building.Code == "" || building.Address == "" {
 		return nil, errors.New("building name, code, and address are required")
 	}
-	building.ID = "bldg-" + randomID()
 	building.CreatedAt = time.Now()
 	building.UpdatedAt = building.CreatedAt
-	_, err := s.db.Exec(`INSERT INTO buildings (id, name, code, address, description, number_of_floors, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, building.ID, building.Name, building.Code, building.Address, building.Description, building.Floors, building.Status, building.CreatedAt, building.UpdatedAt)
+	result, err := s.db.Exec(`INSERT INTO buildings (name, code, address, description, number_of_floors, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, building.Name, building.Code, building.Address, building.Description, building.Floors, building.Status, building.CreatedAt, building.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("save building: %w", err)
 	}
+	building.ID, err = databaseID(result)
+	if err != nil {
+		return nil, fmt.Errorf("read building id: %w", err)
+	}
 	return &building, nil
+}
+
+func databaseID(result sql.Result) (string, error) {
+	id, err := result.LastInsertId()
+	if err != nil {
+		return "", err
+	}
+	return strconv.FormatInt(id, 10), nil
 }
 
 func (s *MySQLService) ListBuildings() []*Building {
