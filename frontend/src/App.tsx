@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import Swal from 'sweetalert2'
 import heroImage from './assets/hero.png'
 import './App.css'
 
@@ -137,6 +138,13 @@ function App() {
     headers: { ...options.headers, Authorization: `Bearer ${session?.token ?? ''}` },
   })
 
+  const showRequestError = async (response: Response, fallback: string) => {
+    const payload = await response.json().catch(() => ({ error: fallback })) as { error?: string }
+    await Swal.fire({ icon: 'error', title: 'Could not complete request', text: payload.error ?? fallback, confirmButtonColor: '#133d32' })
+  }
+
+  const showSuccess = (title: string) => Swal.fire({ icon: 'success', title, timer: 1600, showConfirmButton: false })
+
   const loadData = async () => {
     if (!session) return
     try {
@@ -182,11 +190,13 @@ function App() {
     })
     if (!response.ok) {
       setLoginError('Invalid username or password.')
+      await showRequestError(response, 'Invalid username or password.')
       return
     }
     const nextSession = await response.json() as Session
     localStorage.setItem('masco-session', JSON.stringify(nextSession))
     setSession(nextSession)
+    void showSuccess('Welcome back')
   }
 
   const handleChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -223,9 +233,11 @@ function App() {
       await loadData()
       setForm(defaultForm)
       setView('hq')
+      void showSuccess('Building saved')
     } else {
       const error = await response.json().catch(() => ({ error: 'Could not save building.' })) as { error?: string }
       setFormError(error.error ?? 'Could not save building.')
+      await Swal.fire({ icon: 'error', title: 'Building not saved', text: error.error ?? 'Could not save building.', confirmButtonColor: '#133d32' })
     }
   }
 
@@ -241,6 +253,9 @@ function App() {
     if (response.ok) {
       await loadData()
       setTenantForm(defaultTenantForm)
+      void showSuccess('Tenant saved')
+    } else {
+      await showRequestError(response, 'Could not save tenant.')
     }
   }
 
@@ -259,6 +274,9 @@ function App() {
     if (response.ok) {
       await loadData()
       setContractForm(defaultContractForm)
+      void showSuccess('Contract saved')
+    } else {
+      await showRequestError(response, 'Could not save contract.')
     }
   }
 
@@ -277,6 +295,9 @@ function App() {
     if (response.ok) {
       await loadData()
       setInvoiceForm(defaultInvoiceForm)
+      void showSuccess('Invoice saved')
+    } else {
+      await showRequestError(response, 'Could not save invoice.')
     }
   }
 
@@ -296,12 +317,18 @@ function App() {
       setDocumentContractID('')
       setDocumentName('')
       setDocumentFile(null)
+      void showSuccess('Signed contract uploaded')
+    } else {
+      await showRequestError(response, 'Could not upload the document.')
     }
   }
 
   const handleContractPreview = async (contractID: string) => {
     const response = await apiFetch(`/contracts/${contractID}/preview`)
-    if (!response.ok) return
+    if (!response.ok) {
+      await showRequestError(response, 'Could not generate contract.')
+      return
+    }
     const documentURL = URL.createObjectURL(await response.blob())
     window.open(documentURL, '_blank', 'noopener,noreferrer')
   }

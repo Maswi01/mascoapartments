@@ -23,7 +23,7 @@ func (s *MySQLService) CreateBuilding(building Building) (*Building, error) {
 	building.ID = "bldg-" + randomID()
 	building.CreatedAt = time.Now()
 	building.UpdatedAt = building.CreatedAt
-	_, err := s.db.Exec(`INSERT INTO buildings (id, name, code, address, description, floors, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, building.ID, building.Name, building.Code, building.Address, building.Description, building.Floors, building.Status, building.CreatedAt, building.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO buildings (id, name, code, address, description, number_of_floors, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, building.ID, building.Name, building.Code, building.Address, building.Description, building.Floors, building.Status, building.CreatedAt, building.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("save building: %w", err)
 	}
@@ -31,7 +31,7 @@ func (s *MySQLService) CreateBuilding(building Building) (*Building, error) {
 }
 
 func (s *MySQLService) ListBuildings() []*Building {
-	rows, err := s.db.Query(`SELECT id, name, code, address, description, floors, status, created_at, updated_at FROM buildings ORDER BY created_at DESC`)
+	rows, err := s.db.Query(`SELECT id, name, code, address, description, number_of_floors, status, created_at, updated_at FROM buildings ORDER BY created_at DESC`)
 	if err != nil {
 		return []*Building{}
 	}
