@@ -51,6 +51,16 @@ const defaultContractForm = {
   notes: '',
 }
 
+const defaultPaymentForm = {
+  invoice_id: '',
+  amount: '',
+  payment_date: new Date().toISOString().slice(0, 10),
+  payment_method: 'Bank Transfer',
+  payment_reference: '',
+  receipt_number: '',
+  notes: '',
+}
+
 type BuildingRecord = {
   id: string
   name: string
@@ -100,6 +110,16 @@ type InvoiceRecord = {
   status: string
 }
 
+type PaymentRecord = {
+  id: string
+  invoice_id: string
+  payment_reference: string
+  amount: number
+  payment_date: string
+  payment_method: string
+  receipt_number?: string
+}
+
 type DashboardStats = {
   buildings: number
   floors: number
@@ -118,7 +138,7 @@ type Session = {
   }
 }
 
-type View = 'hq' | 'buildings' | 'units' | 'tenants' | 'contracts' | 'invoices'
+type View = 'hq' | 'buildings' | 'units' | 'tenants' | 'contracts' | 'invoices' | 'payments'
 
 function App() {
   const [session, setSession] = useState<Session | null>(() => {
@@ -132,11 +152,13 @@ function App() {
   const [units, setUnits] = useState<UnitRecord[]>([])
   const [contracts, setContracts] = useState<ContractRecord[]>([])
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([])
+  const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [stats, setStats] = useState<DashboardStats>({ buildings: 0, floors: 0, units: 0, tenants: 0, contracts: 0, invoices: 0 })
   const [form, setForm] = useState(defaultForm)
   const [tenantForm, setTenantForm] = useState(defaultTenantForm)
   const [unitForm, setUnitForm] = useState(defaultUnitForm)
   const [contractForm, setContractForm] = useState(defaultContractForm)
+  const [paymentForm, setPaymentForm] = useState(defaultPaymentForm)
   const [documentContractID, setDocumentContractID] = useState('')
   const [documentName, setDocumentName] = useState('')
   const [documentFile, setDocumentFile] = useState<File | null>(null)
@@ -159,11 +181,12 @@ function App() {
   const loadData = async () => {
     if (!session) return
     try {
-      const [buildingsResponse, tenantsResponse, contractsResponse, invoicesResponse, dashboardResponse] = await Promise.all([
+        const [buildingsResponse, tenantsResponse, contractsResponse, invoicesResponse, paymentsResponse, dashboardResponse] = await Promise.all([
         apiFetch('/buildings'),
         apiFetch('/tenants'),
         apiFetch('/contracts'),
         apiFetch('/invoices'),
+        apiFetch('/payments'),
         apiFetch('/dashboard'),
       ])
 
@@ -171,18 +194,21 @@ function App() {
       const tenantData = await tenantsResponse.json()
       const contractData = await contractsResponse.json()
       const invoiceData = await invoicesResponse.json()
+      const paymentData = await paymentsResponse.json()
       const dashboardData = await dashboardResponse.json()
 
       setBuildings(buildingData.data ?? [])
       setTenants(tenantData.data ?? [])
       setContracts(contractData.data ?? [])
       setInvoices(invoiceData.data ?? [])
+      setPayments(paymentData.data ?? [])
       setStats(dashboardData.data ?? { buildings: 0, floors: 0, units: 0, tenants: 0, contracts: 0, invoices: 0 })
     } catch {
       setBuildings([])
       setTenants([])
       setContracts([])
       setInvoices([])
+        setPayments([])
       setStats({ buildings: 0, floors: 0, units: 0, tenants: 0, contracts: 0, invoices: 0 })
     }
   }
@@ -250,6 +276,10 @@ function App() {
 
   const handleContractChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setContractForm((current) => ({ ...current, [event.target.name]: event.target.value }))
+  }
+
+  const handlePaymentChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setPaymentForm((current) => ({ ...current, [event.target.name]: event.target.value }))
   }
 
   const handleSubmit = async (event: FormEvent) => {
@@ -327,6 +357,18 @@ function App() {
     void showSuccess('Invoice generated')
   }
 
+  const handlePaymentSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    const response = await apiFetch('/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...paymentForm, amount: Number(paymentForm.amount) }) })
+    if (!response.ok) {
+      await showRequestError(response, 'Could not record payment.')
+      return
+    }
+    await loadData()
+    setPaymentForm(defaultPaymentForm)
+    void showSuccess('Payment recorded')
+  }
+
   const handleDocumentSubmit = async (event: FormEvent) => {
     event.preventDefault()
     if (!documentContractID || !documentFile) return
@@ -391,6 +433,7 @@ function App() {
     tenants: 'Tenants',
     contracts: 'Contracts',
     invoices: 'Invoices',
+    payments: 'Payments',
   }
 
   const showView = (nextView: View) => {
@@ -410,6 +453,7 @@ function App() {
           <button className={`nav-link ${view === 'tenants' ? 'active' : ''}`} onClick={() => showView('tenants')}>Tenants</button>
           <button className={`nav-link ${view === 'contracts' ? 'active' : ''}`} onClick={() => showView('contracts')}>Contracts</button>
           <button className={`nav-link ${view === 'invoices' ? 'active' : ''}`} onClick={() => showView('invoices')}>Invoices</button>
+                  <button className={`nav-link ${view === 'payments' ? 'active' : ''}`} onClick={() => showView('payments')}>Payments</button>
         </nav>
       </aside>
 
@@ -755,6 +799,20 @@ function App() {
           </div>
         </div>
         }
+
+        {view === 'payments' && <div className="panel-grid">
+          <form className="panel form-panel" onSubmit={handlePaymentSubmit}>
+            <h2>Record payment</h2>
+            <label>Invoice<select name="invoice_id" value={paymentForm.invoice_id} onChange={handlePaymentChange} required><option value="">Select invoice</option>{invoices.filter((invoice) => invoice.status !== 'Paid' && invoice.status !== 'Cancelled').map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.number} - ${invoice.amount} ({invoice.status})</option>)}</select></label>
+            <label>Amount received<input name="amount" type="number" min="0.01" step="0.01" value={paymentForm.amount} onChange={handlePaymentChange} required /></label>
+            <div className="inline-fields"><label>Payment date<input name="payment_date" type="date" value={paymentForm.payment_date} onChange={handlePaymentChange} required /></label><label>Method<select name="payment_method" value={paymentForm.payment_method} onChange={handlePaymentChange}><option>Bank Transfer</option><option>Cash</option><option>Mobile Money</option><option>Card</option><option>Cheque</option></select></label></div>
+            <label>Payment reference<input name="payment_reference" value={paymentForm.payment_reference} onChange={handlePaymentChange} placeholder="Bank or receipt reference" required /></label>
+            <label>Receipt number<input name="receipt_number" value={paymentForm.receipt_number} onChange={handlePaymentChange} placeholder="Optional receipt number" /></label>
+            <label>Notes<textarea name="notes" value={paymentForm.notes} onChange={handlePaymentChange} placeholder="Optional payment notes" /></label>
+            <button className="primary-button" type="submit">Record payment</button>
+          </form>
+          <div className="panel list-panel"><h2>Payment history</h2><div className="building-list">{payments.length === 0 ? <p className="empty-state">No payments recorded.</p> : payments.map((payment) => <article className="building-card" key={payment.id}><div className="building-header"><div><h3>${payment.amount}</h3><span className="code-tag">{payment.payment_method}</span></div><span className="status-badge">{payment.payment_date}</span></div><p>{payment.payment_reference}</p><div className="meta-row"><span>Invoice #{payment.invoice_id}</span><span>{payment.receipt_number || 'No receipt number'}</span></div></article>)}</div></div>
+        </div>}
       </section>
     </main>
   )

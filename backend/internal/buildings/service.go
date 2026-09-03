@@ -24,6 +24,7 @@ type Service struct {
 	tenants   map[string]*Tenant
 	contracts map[string]*Contract
 	invoices  map[string]*Invoice
+	payments  map[string]*Payment
 	documents map[string]*Document
 }
 
@@ -35,6 +36,7 @@ func NewService() *Service {
 		tenants:   map[string]*Tenant{},
 		contracts: map[string]*Contract{},
 		invoices:  map[string]*Invoice{},
+		payments:  map[string]*Payment{},
 		documents: map[string]*Document{},
 	}
 }
@@ -241,6 +243,24 @@ func (s *Service) ListInvoices() []*Invoice {
 	items := make([]*Invoice, 0, len(s.invoices))
 	for _, invoice := range s.invoices {
 		items = append(items, invoice)
+	}
+	return items
+}
+
+func (s *Service) CreatePayment(payment Payment) (*Payment, error) {
+	if payment.InvoiceID == "" || payment.PaymentReference == "" || payment.Amount <= 0 || payment.PaymentMethod == "" {
+		return nil, errors.New("invoice, payment reference, amount, and payment method are required")
+	}
+	payment.ID = "payment-" + randomID()
+	payment.CreatedAt = time.Now()
+	s.payments[payment.ID] = &payment
+	return s.payments[payment.ID], nil
+}
+
+func (s *Service) ListPayments() []*Payment {
+	items := make([]*Payment, 0, len(s.payments))
+	for _, payment := range s.payments {
+		items = append(items, payment)
 	}
 	return items
 }

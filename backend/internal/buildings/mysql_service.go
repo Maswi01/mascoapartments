@@ -279,6 +279,59 @@ func (s *MySQLService) ListInvoices() []*Invoice {
 	return items
 }
 
+func (s *MySQLService) CreatePayment(payment Payment) (*Payment, error) {
+	if payment.InvoiceID == "" || payment.PaymentReference == "" || payment.Amount <= 0 || payment.PaymentMethod == "" {
+		return nil, errors.New("invoice, payment reference, amount, and payment method are required")
+	}
+	var invoice Invoice
+	err := s.db.QueryRow(`SELECT tenant_id, building_id, unit_id, amount FROM invoices WHERE id = ?`, payment.InvoiceID).Scan(&invoice.TenantID, &invoice.BuildingID, &invoice.UnitID, &invoice.Amount)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errors.New("invoice not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load invoice: %w", err)
+	}
+	var methodID uint64
+	if err := s.db.QueryRow(`SELECT id FROM payment_methods WHERE name = ?`, payment.PaymentMethod).Scan(&methodID); err != nil {
+		return nil, errors.New("payment method not found")
+	}
+	payment.TenantID, payment.BuildingID, payment.UnitID = invoice.TenantID, invoice.BuildingID, invoice.UnitID
+	payment.CreatedAt = time.Now()
+	result, err := s.db.Exec(`INSERT INTO payments (tenant_id, invoice_id, building_id, unit_id, payment_reference, amount, payment_date, payment_method_id, receipt_number, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)`, payment.TenantID, payment.InvoiceID, payment.BuildingID, payment.UnitID, payment.PaymentReference, payment.Amount, payment.PaymentDate, methodID, payment.ReceiptNumber, payment.Notes, payment.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("save payment: %w", err)
+	}
+	payment.ID, err = databaseID(result)
+	if err != nil {
+		return nil, fmt.Errorf("read payment id: %w", err)
+	}
+	var paid float64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM payments WHERE invoice_id = ?`, payment.InvoiceID).Scan(&paid); err == nil {
+		status := "Partially Paid"
+		if paid >= invoice.Amount {
+			status = "Paid"
+		}
+		_, _ = s.db.Exec(`UPDATE invoices SET status = ? WHERE id = ?`, status, payment.InvoiceID)
+	}
+	return &payment, nil
+}
+
+func (s *MySQLService) ListPayments() []*Payment {
+	rows, err := s.db.Query(`SELECT p.id, p.tenant_id, p.invoice_id, p.building_id, p.unit_id, p.payment_reference, p.amount, p.payment_date, pm.name, COALESCE(p.receipt_number, ''), COALESCE(p.notes, ''), p.created_at FROM payments p JOIN payment_methods pm ON pm.id = p.payment_method_id ORDER BY p.created_at DESC`)
+	if err != nil {
+		return []*Payment{}
+	}
+	defer rows.Close()
+	items := make([]*Payment, 0)
+	for rows.Next() {
+		item := &Payment{}
+		if rows.Scan(&item.ID, &item.TenantID, &item.InvoiceID, &item.BuildingID, &item.UnitID, &item.PaymentReference, &item.Amount, &item.PaymentDate, &item.PaymentMethod, &item.ReceiptNumber, &item.Notes, &item.CreatedAt) == nil {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
 func (s *MySQLService) DashboardSummary() DashboardSummary {
 	summary := DashboardSummary{}
 	for _, counter := range []struct {

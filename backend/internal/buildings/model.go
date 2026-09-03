@@ -101,6 +101,21 @@ type Invoice struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type Payment struct {
+	ID               string    `json:"id"`
+	TenantID         string    `json:"tenant_id"`
+	InvoiceID        string    `json:"invoice_id"`
+	BuildingID       string    `json:"building_id"`
+	UnitID           string    `json:"unit_id"`
+	PaymentReference string    `json:"payment_reference"`
+	Amount           float64   `json:"amount"`
+	PaymentDate      string    `json:"payment_date"`
+	PaymentMethod    string    `json:"payment_method"`
+	ReceiptNumber    string    `json:"receipt_number,omitempty"`
+	Notes            string    `json:"notes,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
 type DashboardSummary struct {
 	Buildings int `json:"buildings"`
 	Floors    int `json:"floors"`

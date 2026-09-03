@@ -33,6 +33,8 @@ type ServiceAPI interface {
 	ListDocumentsByContract(string) []*Document
 	CreateInvoice(Invoice) (*Invoice, error)
 	ListInvoices() []*Invoice
+	CreatePayment(Payment) (*Payment, error)
+	ListPayments() []*Payment
 	DashboardSummary() DashboardSummary
 }
 
@@ -58,6 +60,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/contracts/{id}/documents", h.uploadDocument)
 	mux.HandleFunc("GET /api/v1/invoices", h.listInvoices)
 	mux.HandleFunc("POST /api/v1/invoices", h.createInvoice)
+	mux.HandleFunc("GET /api/v1/payments", h.listPayments)
+	mux.HandleFunc("POST /api/v1/payments", h.createPayment)
 }
 
 func (h *Handler) dashboard(writer http.ResponseWriter, request *http.Request) {
@@ -331,6 +335,27 @@ func (h *Handler) createInvoice(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusCreated)
+	json.NewEncoder(writer).Encode(created)
+}
+
+func (h *Handler) listPayments(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListPayments()})
+}
+
+func (h *Handler) createPayment(writer http.ResponseWriter, request *http.Request) {
+	var payment Payment
+	if err := json.NewDecoder(request.Body).Decode(&payment); err != nil {
+		writeJSONError(writer, http.StatusBadRequest, "invalid payment payload")
+		return
+	}
+	created, err := h.service.CreatePayment(payment)
+	if err != nil {
+		writeJSONError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusCreated)
 	json.NewEncoder(writer).Encode(created)
