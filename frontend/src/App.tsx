@@ -724,50 +724,12 @@ function App() {
         </>}
 
         {view === 'invoices' && <div className="panel-grid">
-          <form className="panel form-panel" onSubmit={handleInvoiceSubmit}>
-            <h2>Add invoice</h2>
-            <label>
-              Invoice number
-              <input name="number" value={invoiceForm.number} onChange={handleInvoiceChange} placeholder="INV-001" />
-            </label>
-            <label>
-              Contract ID
-              <input name="contract_id" value={invoiceForm.contract_id} onChange={handleInvoiceChange} placeholder="contract-abc123" />
-            </label>
-            <label>
-              Tenant ID
-              <input name="tenant_id" value={invoiceForm.tenant_id} onChange={handleInvoiceChange} placeholder="tenant-abc123" />
-            </label>
-            <label>
-              Unit ID
-              <input name="unit_id" value={invoiceForm.unit_id} onChange={handleInvoiceChange} placeholder="unit-abc123" />
-            </label>
-            <div className="inline-fields">
-              <label>
-                Issue date
-                <input type="date" name="issue_date" value={invoiceForm.issue_date} onChange={handleInvoiceChange} />
-              </label>
-              <label>
-                Due date
-                <input type="date" name="due_date" value={invoiceForm.due_date} onChange={handleInvoiceChange} />
-              </label>
+          <div className="panel list-panel">
+            <h2>Generate from contract</h2>
+            <div className="building-list">
+              {contracts.filter((contract) => contract.status === 'Active').length === 0 ? <p className="empty-state">Create an active contract before generating an invoice.</p> : contracts.filter((contract) => contract.status === 'Active').map((contract) => <article className="building-card" key={contract.id}><h3>{contract.contract_type} contract</h3><p>${contract.monthly_rent} / {contract.payment_frequency || 'Monthly'}</p><button className="primary-button" type="button" onClick={() => void handleGenerateInvoice(contract.id)}>Generate invoice</button></article>)}
             </div>
-            <label>
-              Amount
-              <input type="number" min="0" step="0.01" name="amount" value={invoiceForm.amount} onChange={handleInvoiceChange} />
-            </label>
-            <label>
-              Status
-              <select name="status" value={invoiceForm.status} onChange={handleInvoiceChange}>
-                <option>Pending</option>
-                <option>Partially Paid</option>
-                <option>Paid</option>
-                <option>Overdue</option>
-              </select>
-            </label>
-            <button className="primary-button" type="submit">Save invoice</button>
-          </form>
-
+          </div>
           <div className="panel list-panel">
             <h2>Invoices</h2>
             <div className="building-list">
