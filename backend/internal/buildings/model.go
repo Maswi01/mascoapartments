@@ -86,17 +86,19 @@ type Document struct {
 }
 
 type Invoice struct {
-	ID         string    `json:"id"`
-	ContractID string    `json:"contract_id"`
-	TenantID   string    `json:"tenant_id"`
-	UnitID     string    `json:"unit_id"`
-	Number     string    `json:"number"`
-	IssueDate  string    `json:"issue_date"`
-	DueDate    string    `json:"due_date"`
-	Amount     float64   `json:"amount"`
-	Status     string    `json:"status"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	ContractID  string    `json:"contract_id"`
+	TenantID    string    `json:"tenant_id"`
+	BuildingID  string    `json:"building_id"`
+	UnitID      string    `json:"unit_id"`
+	Number      string    `json:"number"`
+	IssueDate   string    `json:"issue_date"`
+	DueDate     string    `json:"due_date"`
+	Amount      float64   `json:"amount"`
+	Description string    `json:"description,omitempty"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type DashboardSummary struct {

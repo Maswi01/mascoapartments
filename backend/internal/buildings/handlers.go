@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Handler exposes the core building, floor, and unit APIs.
@@ -52,6 +53,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/contracts", h.listContracts)
 	mux.HandleFunc("POST /api/v1/contracts", h.createContract)
 	mux.HandleFunc("GET /api/v1/contracts/{id}/preview", h.previewContract)
+	mux.HandleFunc("POST /api/v1/contracts/{id}/invoices", h.generateInvoice)
 	mux.HandleFunc("GET /api/v1/contracts/{id}/documents", h.listDocuments)
 	mux.HandleFunc("POST /api/v1/contracts/{id}/documents", h.uploadDocument)
 	mux.HandleFunc("GET /api/v1/invoices", h.listInvoices)
@@ -214,6 +216,39 @@ func (h *Handler) previewContract(writer http.ResponseWriter, request *http.Requ
 	if err := contractPreviewTemplate.Execute(writer, map[string]interface{}{"Contract": contract, "TenantName": tenantName, "UnitNumber": unit.Number}); err != nil {
 		writeJSONError(writer, http.StatusInternalServerError, "render contract preview")
 	}
+}
+
+func (h *Handler) generateInvoice(writer http.ResponseWriter, request *http.Request) {
+	contract, err := h.service.GetContract(request.PathValue("id"))
+	if err != nil {
+		writeJSONError(writer, http.StatusNotFound, err.Error())
+		return
+	}
+	unit, err := h.service.GetUnit(contract.UnitID)
+	if err != nil {
+		writeJSONError(writer, http.StatusNotFound, err.Error())
+		return
+	}
+	now := time.Now()
+	created, err := h.service.CreateInvoice(Invoice{
+		ContractID:  contract.ID,
+		TenantID:    contract.TenantID,
+		BuildingID:  unit.BuildingID,
+		UnitID:      unit.ID,
+		Number:      "INV-" + contract.ID + "-" + now.Format("20060102"),
+		IssueDate:   now.Format("2006-01-02"),
+		DueDate:     now.AddDate(0, 0, 7).Format("2006-01-02"),
+		Amount:      contract.MonthlyRent,
+		Description: "Rent invoice for unit " + unit.Number,
+		Status:      "Pending",
+	})
+	if err != nil {
+		writeJSONError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusCreated)
+	json.NewEncoder(writer).Encode(created)
 }
 
 func (h *Handler) listDocuments(writer http.ResponseWriter, request *http.Request) {

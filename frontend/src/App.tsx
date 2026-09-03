@@ -26,6 +26,16 @@ const defaultTenantForm = {
   notes: '',
 }
 
+const defaultUnitForm = {
+  number: '',
+  type: 'Residential',
+  description: '',
+  bedrooms: '0',
+  bathrooms: '0',
+  size: '',
+  status: 'Vacant',
+}
+
 const defaultContractForm = {
   tenant_id: '',
   unit_id: '',
@@ -39,17 +49,6 @@ const defaultContractForm = {
   terms: '',
   status: 'Active',
   notes: '',
-}
-
-const defaultInvoiceForm = {
-  tenant_id: '',
-  unit_id: '',
-  contract_id: '',
-  number: '',
-  issue_date: '',
-  due_date: '',
-  amount: '0',
-  status: 'Pending',
 }
 
 type BuildingRecord = {
@@ -69,6 +68,17 @@ type TenantRecord = {
   company_name?: string
   phone?: string
   email?: string
+}
+
+type UnitRecord = {
+  id: string
+  building_id: string
+  number: string
+  type: string
+  bedrooms: number
+  bathrooms: number
+  size?: string
+  status: string
 }
 
 type ContractRecord = {
@@ -108,7 +118,7 @@ type Session = {
   }
 }
 
-type View = 'hq' | 'buildings' | 'tenants' | 'contracts' | 'invoices'
+type View = 'hq' | 'buildings' | 'units' | 'tenants' | 'contracts' | 'invoices'
 
 function App() {
   const [session, setSession] = useState<Session | null>(() => {
@@ -119,13 +129,14 @@ function App() {
   const [loginError, setLoginError] = useState('')
   const [buildings, setBuildings] = useState<BuildingRecord[]>([])
   const [tenants, setTenants] = useState<TenantRecord[]>([])
+  const [units, setUnits] = useState<UnitRecord[]>([])
   const [contracts, setContracts] = useState<ContractRecord[]>([])
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([])
   const [stats, setStats] = useState<DashboardStats>({ buildings: 0, floors: 0, units: 0, tenants: 0, contracts: 0, invoices: 0 })
   const [form, setForm] = useState(defaultForm)
   const [tenantForm, setTenantForm] = useState(defaultTenantForm)
+  const [unitForm, setUnitForm] = useState(defaultUnitForm)
   const [contractForm, setContractForm] = useState(defaultContractForm)
-  const [invoiceForm, setInvoiceForm] = useState(defaultInvoiceForm)
   const [documentContractID, setDocumentContractID] = useState('')
   const [documentName, setDocumentName] = useState('')
   const [documentFile, setDocumentFile] = useState<File | null>(null)
@@ -180,6 +191,14 @@ function App() {
     if (session) void loadData()
   }, [session])
 
+  useEffect(() => {
+    if (!session || selectedBuildingID === 'hq') {
+      setUnits([])
+      return
+    }
+    void apiFetch(`/buildings/${selectedBuildingID}/units`).then((response) => response.json()).then((payload) => setUnits(payload.data ?? [])).catch(() => setUnits([]))
+  }, [selectedBuildingID, session])
+
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault()
     setLoginError('')
@@ -207,12 +226,30 @@ function App() {
     setTenantForm((current) => ({ ...current, [event.target.name]: event.target.value }))
   }
 
-  const handleContractChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setContractForm((current) => ({ ...current, [event.target.name]: event.target.value }))
+  const handleUnitChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setUnitForm((current) => ({ ...current, [event.target.name]: event.target.value }))
   }
 
-  const handleInvoiceChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setInvoiceForm((current) => ({ ...current, [event.target.name]: event.target.value }))
+  const handleUnitSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (selectedBuildingID === 'hq') {
+      await Swal.fire({ icon: 'info', title: 'Choose a building first', text: 'Select the building this unit belongs to from the portfolio context selector.', confirmButtonColor: '#133d32' })
+      return
+    }
+    const response = await apiFetch(`/buildings/${selectedBuildingID}/units`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...unitForm, bedrooms: Number(unitForm.bedrooms), bathrooms: Number(unitForm.bathrooms) }) })
+    if (!response.ok) {
+      await showRequestError(response, 'Could not save unit.')
+      return
+    }
+    const payload = await apiFetch(`/buildings/${selectedBuildingID}/units`)
+    const data = await payload.json()
+    setUnits(data.data ?? [])
+    setUnitForm(defaultUnitForm)
+    void showSuccess('Unit saved')
+  }
+
+  const handleContractChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setContractForm((current) => ({ ...current, [event.target.name]: event.target.value }))
   }
 
   const handleSubmit = async (event: FormEvent) => {
@@ -280,25 +317,14 @@ function App() {
     }
   }
 
-  const handleInvoiceSubmit = async (event: FormEvent) => {
-    event.preventDefault()
-
-    const response = await apiFetch('/invoices', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...invoiceForm,
-        amount: Number(invoiceForm.amount),
-      }),
-    })
-
-    if (response.ok) {
-      await loadData()
-      setInvoiceForm(defaultInvoiceForm)
-      void showSuccess('Invoice saved')
-    } else {
-      await showRequestError(response, 'Could not save invoice.')
+  const handleGenerateInvoice = async (contractID: string) => {
+    const response = await apiFetch(`/contracts/${contractID}/invoices`, { method: 'POST' })
+    if (!response.ok) {
+      await showRequestError(response, 'Could not generate invoice.')
+      return
     }
+    await loadData()
+    void showSuccess('Invoice generated')
   }
 
   const handleDocumentSubmit = async (event: FormEvent) => {
@@ -361,6 +387,7 @@ function App() {
   const pageTitle: Record<View, string> = {
     hq: 'HQ overview',
     buildings: 'Buildings',
+    units: 'Units',
     tenants: 'Tenants',
     contracts: 'Contracts',
     invoices: 'Invoices',
@@ -379,6 +406,7 @@ function App() {
         <nav className="nav">
           <button className={`nav-link ${view === 'hq' ? 'active' : ''}`} onClick={() => showView('hq')}>HQ overview</button>
           <button className={`nav-link ${view === 'buildings' ? 'active' : ''}`} onClick={() => showView('buildings')}>Buildings</button>
+          <button className={`nav-link ${view === 'units' ? 'active' : ''}`} onClick={() => showView('units')}>Units</button>
           <button className={`nav-link ${view === 'tenants' ? 'active' : ''}`} onClick={() => showView('tenants')}>Tenants</button>
           <button className={`nav-link ${view === 'contracts' ? 'active' : ''}`} onClick={() => showView('contracts')}>Contracts</button>
           <button className={`nav-link ${view === 'invoices' ? 'active' : ''}`} onClick={() => showView('invoices')}>Invoices</button>
@@ -476,6 +504,20 @@ function App() {
         </div>
         }
 
+        {view === 'units' && <div className="panel-grid">
+          <form className="panel form-panel" onSubmit={handleUnitSubmit}>
+            <h2>Add unit</h2>
+            <p className="empty-state">{selectedBuilding ? `Adding to ${selectedBuilding.name}` : 'Select a building above before adding a unit.'}</p>
+            <label>Unit number<input name="number" value={unitForm.number} onChange={handleUnitChange} placeholder="A1 or Shop 4" required /></label>
+            <div className="inline-fields"><label>Unit type<select name="type" value={unitForm.type} onChange={handleUnitChange}><option>Residential</option><option>Commercial</option><option>Service</option></select></label><label>Status<select name="status" value={unitForm.status} onChange={handleUnitChange}><option>Vacant</option><option>Occupied</option><option>Maintenance</option><option>Reserved</option></select></label></div>
+            <label>Description<textarea name="description" value={unitForm.description} onChange={handleUnitChange} placeholder="Apartment, shop, office, or service area" /></label>
+            <div className="inline-fields"><label>Bedrooms<input type="number" min="0" name="bedrooms" value={unitForm.bedrooms} onChange={handleUnitChange} /></label><label>Bathrooms<input type="number" min="0" name="bathrooms" value={unitForm.bathrooms} onChange={handleUnitChange} /></label></div>
+            <label>Approximate size<input name="size" value={unitForm.size} onChange={handleUnitChange} placeholder="75 sqm" /></label>
+            <button className="primary-button" type="submit">Save unit</button>
+          </form>
+          <div className="panel list-panel"><h2>{selectedBuilding ? `${selectedBuilding.name} units` : 'Units'}</h2><div className="building-list">{selectedBuildingID === 'hq' ? <p className="empty-state">Choose a building to see its units.</p> : units.length === 0 ? <p className="empty-state">No units registered for this building.</p> : units.map((unit) => <article className="building-card" key={unit.id}><div className="building-header"><div><h3>{unit.number}</h3><span className="code-tag">{unit.type}</span></div><span className="status-badge">{unit.status}</span></div><div className="meta-row"><span>{unit.bedrooms} bedrooms, {unit.bathrooms} bathrooms</span><span>{unit.size || 'Size not set'}</span></div></article>)}</div></div>
+        </div>}
+
         {view === 'tenants' && <div className="panel-grid">
           <form className="panel form-panel" onSubmit={handleTenantSubmit}>
             <h2>Add tenant</h2>
@@ -558,10 +600,7 @@ function App() {
                 {tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.full_name || tenant.company_name}</option>)}
               </select>
             </label>
-            <label>
-              Unit ID
-              <input name="unit_id" value={contractForm.unit_id} onChange={handleContractChange} placeholder="unit-abc123" />
-            </label>
+            <label>Unit<select name="unit_id" value={contractForm.unit_id} onChange={handleContractChange} disabled={selectedBuildingID === 'hq'}><option value="">{selectedBuildingID === 'hq' ? 'Choose a building context first' : 'Select unit'}</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.number} - {unit.type}</option>)}</select></label>
             <div className="inline-fields">
               <label>
                 Contract type
