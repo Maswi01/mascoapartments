@@ -1,0 +1,109 @@
+package buildings
+
+import "time"
+
+// Building is the top-level property record for a physical property.
+type Building struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Code        string    `json:"code"`
+	Address     string    `json:"address"`
+	Description string    `json:"description,omitempty"`
+	Floors      int       `json:"floors"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Floor represents a level or floor inside a building.
+type Floor struct {
+	ID          string    `json:"id"`
+	BuildingID  string    `json:"building_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Unit represents a rentable physical space in a building or floor.
+type Unit struct {
+	ID          string    `json:"id"`
+	BuildingID  string    `json:"building_id"`
+	FloorID     string    `json:"floor_id,omitempty"`
+	Number      string    `json:"number"`
+	Type        string    `json:"type"`
+	Description string    `json:"description,omitempty"`
+	Bedrooms    int       `json:"bedrooms,omitempty"`
+	Bathrooms   int       `json:"bathrooms,omitempty"`
+	Size        string    `json:"size,omitempty"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type Tenant struct {
+	ID              string    `json:"id"`
+	Type            string    `json:"type"`
+	FullName        string    `json:"full_name,omitempty"`
+	CompanyName     string    `json:"company_name,omitempty"`
+	ContactPerson   string    `json:"contact_person,omitempty"`
+	Phone           string    `json:"phone,omitempty"`
+	Email           string    `json:"email,omitempty"`
+	Address         string    `json:"address,omitempty"`
+	IDNumber        string    `json:"id_number,omitempty"`
+	RegistrationRef string    `json:"registration_ref,omitempty"`
+	Notes           string    `json:"notes,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+type Contract struct {
+	ID                    string    `json:"id"`
+	UnitID                string    `json:"unit_id"`
+	TenantID              string    `json:"tenant_id"`
+	ContractType          string    `json:"contract_type"`
+	StartDate             string    `json:"start_date"`
+	EndDate               string    `json:"end_date,omitempty"`
+	MonthlyRent           float64   `json:"monthly_rent"`
+	PaymentMethod         string    `json:"payment_method,omitempty"`
+	PaymentFrequency      string    `json:"payment_frequency,omitempty"`
+	UtilityResponsibility string    `json:"utility_responsibility,omitempty"`
+	Terms                 string    `json:"terms,omitempty"`
+	Status                string    `json:"status"`
+	Notes                 string    `json:"notes,omitempty"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+}
+
+type Document struct {
+	ID           string    `json:"id"`
+	ContractID   string    `json:"contract_id"`
+	Name         string    `json:"name"`
+	OriginalName string    `json:"original_name"`
+	Path         string    `json:"path"`
+	MimeType     string    `json:"mime_type"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type Invoice struct {
+	ID         string    `json:"id"`
+	ContractID string    `json:"contract_id"`
+	TenantID   string    `json:"tenant_id"`
+	UnitID     string    `json:"unit_id"`
+	Number     string    `json:"number"`
+	IssueDate  string    `json:"issue_date"`
+	DueDate    string    `json:"due_date"`
+	Amount     float64   `json:"amount"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type DashboardSummary struct {
+	Buildings int `json:"buildings"`
+	Floors    int `json:"floors"`
+	Units     int `json:"units"`
+	Tenants   int `json:"tenants"`
+	Contracts int `json:"contracts"`
+	Invoices  int `json:"invoices"`
+}
