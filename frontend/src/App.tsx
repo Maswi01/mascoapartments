@@ -194,34 +194,38 @@ function App() {
 
   const showSuccess = (title: string) => Swal.fire({ icon: 'success', title, timer: 1600, showConfirmButton: false })
 
+  const readData = async (path: string) => {
+    const response = await apiFetch(path)
+    if (!response.ok) {
+      throw new Error(`${path}: ${response.status}`)
+    }
+    return response.json() as Promise<{ data?: unknown }>
+  }
+
   const loadData = async () => {
     if (!session) return
     try {
-        const [buildingsResponse, tenantsResponse, contractsResponse, invoicesResponse, paymentsResponse] = await Promise.all([
-        apiFetch('/buildings'),
-        apiFetch(`/tenants${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
-        apiFetch(`/contracts${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
-        apiFetch(`/invoices${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
-        apiFetch(`/payments${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
+      const contextQuery = selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`
+      const [buildingData, tenantData, contractData, invoiceData, paymentData] = await Promise.all([
+        readData('/buildings'),
+        readData(`/tenants${contextQuery}`),
+        readData(`/contracts${contextQuery}`),
+        readData(`/invoices${contextQuery}`),
+        readData(`/payments${contextQuery}`),
       ])
 
-      const buildingData = await buildingsResponse.json()
-      const tenantData = await tenantsResponse.json()
-      const contractData = await contractsResponse.json()
-      const invoiceData = await invoicesResponse.json()
-      const paymentData = await paymentsResponse.json()
-
-      setBuildings(buildingData.data ?? [])
-      setTenants(tenantData.data ?? [])
-      setContracts(contractData.data ?? [])
-      setInvoices(invoiceData.data ?? [])
-      setPayments(paymentData.data ?? [])
+      const nextBuildings = (buildingData.data ?? []) as BuildingRecord[]
+      setBuildings(nextBuildings)
+      if (selectedBuildingID !== 'hq' && !nextBuildings.some((building) => String(building.id) === selectedBuildingID)) {
+        switchBuilding('hq')
+        return
+      }
+      setTenants((tenantData.data ?? []) as TenantRecord[])
+      setContracts((contractData.data ?? []) as ContractRecord[])
+      setInvoices((invoiceData.data ?? []) as InvoiceRecord[])
+      setPayments((paymentData.data ?? []) as PaymentRecord[])
     } catch {
-      setBuildings([])
-      setTenants([])
-      setContracts([])
-      setInvoices([])
-        setPayments([])
+      await Swal.fire({ icon: 'error', title: 'Could not load portfolio data', text: 'Check the API response and database schema. The failed request is available in the browser network panel.', confirmButtonColor: '#133d32' })
     }
   }
 
@@ -618,7 +622,7 @@ function App() {
         <div className="branch-grid">{branchCards.map((branch) => <button className="branch-card" key={branch.building.id} onClick={() => switchBuilding(String(branch.building.id))}><span>BRANCH: {branch.building.code}</span><strong>{branch.active} active</strong><small>{branch.expiring30} expiring in 30d · {branch.expired} expired · {branch.unpaid} unpaid</small></button>)}</div>
         </div>}
         {view === 'home' && selectedBuilding && <div className="branch-dashboard">
-        <div className="dashboard-heading"><div><p className="eyebrow">Branch dashboard</p><h2>OWNER UPDATES - {selectedBuilding.code}</h2></div><span className="updated-date">Updated: {today.toLocaleDateString('en-GB')}</span></div>
+        <div className="dashboard-heading"><div><p className="eyebrow">Branch dashboard · {selectedBuilding.code}</p><h2>OWNER UPDATES - {selectedBuilding.name}</h2></div><span className="updated-date">Updated: {today.toLocaleDateString('en-GB')}</span></div>
         <div className="stats-grid dashboard-stats">
           <div className="stat-card"><span>Active contracts</span><strong>{activeContracts.length}</strong></div>
           <div className="stat-card"><span>Expiring 7 days</span><strong>{expiring7.length}</strong></div>
