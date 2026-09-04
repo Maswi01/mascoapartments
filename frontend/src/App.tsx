@@ -199,10 +199,11 @@ function App() {
   const [unitFloorFilter, setUnitFloorFilter] = useState("All");
   const [unitPage, setUnitPage] = useState(1);
   const [unitPageSize, setUnitPageSize] = useState(10);
-  const [unitPageMode, setUnitPageMode] = useState<"list" | "create">(() =>
-    window.location.pathname === "/units/new" ? "create" : "list",
+  const [unitPageMode, setUnitPageMode] = useState<"list" | "create" | "rent">(() =>
+    window.location.pathname === "/units/new" ? "create" : window.location.pathname.includes("/rent") ? "rent" : "list",
   );
   const [editingUnitID, setEditingUnitID] = useState<string | null>(null);
+  const [rentUnitID, setRentUnitID] = useState<string | null>(null);
   const [contractForm, setContractForm] = useState(defaultContractForm);
   const [paymentForm, setPaymentForm] = useState(defaultPaymentForm);
   const [documentContractID, setDocumentContractID] = useState("");
@@ -233,6 +234,7 @@ function App() {
     window.history.pushState({}, "", path);
     if (path === "/units/new") setUnitPageMode("create");
     if (path === "/units") setUnitPageMode("list");
+    if (path.includes("/rent")) setUnitPageMode("rent");
   };
 
   const logout = () => {
@@ -469,6 +471,12 @@ function App() {
     void showSuccess("Unit deleted");
   };
 
+  const rentUnit = (unit: UnitRecord) => {
+    setRentUnitID(unit.id);
+    setContractForm((current) => ({ ...current, unit_id: unit.id, contract_type: unit.type, monthly_rent: formatAmount(unit.base_rent) }));
+    goTo(`/units/${unit.id}/rent`);
+  };
+
   const handleUnitSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (selectedBuildingID === "hq") {
@@ -614,6 +622,10 @@ function App() {
     if (response.ok) {
       await loadData();
       setContractForm(defaultContractForm);
+      if (rentUnitID) {
+        setRentUnitID(null)
+        goTo('/units')
+      }
       void showSuccess("Contract saved");
     } else {
       await showRequestError(response, "Could not save contract.");
@@ -1582,7 +1594,7 @@ function App() {
         )}
 
         {view === "buildings" && (
-          <div className="panel-grid">
+          <div className={`panel-grid units-workspace ${unitPageMode}`}>
             <form className="panel form-panel" onSubmit={handleSubmit}>
               <h2>Add building</h2>
               <label>
@@ -1775,6 +1787,21 @@ function App() {
                 <button className="primary-button" type="submit">{editingUnitID ? "Save changes" : "Save unit"}</button>
               </form>
             )}
+            {unitPageMode === "rent" && (
+              <form className="panel form-panel rent-panel" onSubmit={handleContractSubmit}>
+                <div className="section-heading">
+                  <h2>Rent unit</h2>
+                  <button className="secondary-button" type="button" onClick={() => { setRentUnitID(null); goTo("/units"); }}>Back to list</button>
+                </div>
+                <p className="empty-state">{selectedBuilding?.name} · Unit {units.find((unit) => unit.id === rentUnitID)?.number}</p>
+                <label>Tenant<select name="tenant_id" value={contractForm.tenant_id} onChange={handleContractChange} required><option value="">Select tenant</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.full_name || tenant.company_name}</option>)}</select></label>
+                <div className="inline-fields"><label>Start date<input type="date" name="start_date" value={contractForm.start_date} onChange={handleContractChange} required /></label><label>End date<input type="date" name="end_date" value={contractForm.end_date} onChange={handleContractChange} required /></label></div>
+                <label>Required rent<input inputMode="decimal" name="monthly_rent" value={contractForm.monthly_rent} onChange={(event) => setContractForm((current) => ({ ...current, monthly_rent: formatAmount(event.target.value) }))} required /></label>
+                <div className="inline-fields"><label>Payment method<select name="payment_method" value={contractForm.payment_method} onChange={handleContractChange}><option>Bank Transfer</option><option>Cash</option><option>Mobile Money</option><option>Cheque</option></select></label><label>Payment frequency<select name="payment_frequency" value={contractForm.payment_frequency} onChange={handleContractChange}><option>Monthly</option><option>Every 3 months</option><option>Every 6 months</option><option>Yearly</option></select></label></div>
+                <label>Notes<textarea name="notes" value={contractForm.notes} onChange={handleContractChange} placeholder="Lease notes" /></label>
+                <button className="primary-button" type="submit">Create contract</button>
+              </form>
+            )}
             <div className="panel list-panel">
               <div className="section-heading">
                 <h2>
@@ -1893,6 +1920,7 @@ function App() {
                                 </span>
                               </td>
                               <td>
+                                {unit.status === "Vacant" && <button className="table-action rent" type="button" onClick={() => rentUnit(unit)}>Rent</button>}
                                 <button className="table-action edit" type="button" onClick={() => void editUnit(unit)}>Edit</button>
                                 <button className="table-action delete" type="button" onClick={() => void deleteUnit(unit)}>Delete</button>
                               </td>
