@@ -86,7 +86,7 @@ func TestServiceTracksPortfolioAndDashboardSummary(t *testing.T) {
 		t.Fatal("expected contract document to be stored")
 	}
 
-	summary := service.DashboardSummary()
+	summary := service.DashboardSummary("")
 	if summary.Buildings != 1 {
 		t.Fatalf("expected 1 building, got %d", summary.Buildings)
 	}

@@ -147,8 +147,15 @@ func (s *MySQLService) CreateTenant(tenant Tenant) (*Tenant, error) {
 	return &tenant, nil
 }
 
-func (s *MySQLService) ListTenants() []*Tenant {
-	rows, err := s.db.Query(`SELECT id, type, full_name, company_name, contact_person, phone, email, address, id_number, registration_ref, notes, created_at, updated_at FROM tenants ORDER BY created_at DESC`)
+func (s *MySQLService) ListTenants(buildingID string) []*Tenant {
+	query := `SELECT DISTINCT t.id, t.type, t.full_name, t.company_name, t.contact_person, t.phone, t.email, t.address, t.id_number, t.registration_ref, t.notes, t.created_at, t.updated_at FROM tenants t LEFT JOIN contracts c ON c.tenant_id = t.id LEFT JOIN units u ON u.id = c.unit_id`
+	args := []interface{}{}
+	if buildingID != "" {
+		query += ` WHERE u.building_id = ?`
+		args = append(args, buildingID)
+	}
+	query += ` ORDER BY t.created_at DESC`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return []*Tenant{}
 	}
@@ -189,8 +196,15 @@ func (s *MySQLService) CreateContract(contract Contract) (*Contract, error) {
 	return &contract, nil
 }
 
-func (s *MySQLService) ListContracts() []*Contract {
-	rows, err := s.db.Query(`SELECT id, unit_id, tenant_id, contract_type, start_date, COALESCE(end_date, ''), monthly_rent, payment_method, payment_frequency, utility_responsibility, COALESCE(terms, ''), status, notes, created_at, updated_at FROM contracts ORDER BY created_at DESC`)
+func (s *MySQLService) ListContracts(buildingID string) []*Contract {
+	query := `SELECT c.id, c.unit_id, c.tenant_id, c.contract_type, c.start_date, COALESCE(c.end_date, ''), c.monthly_rent, c.payment_method, c.payment_frequency, c.utility_responsibility, COALESCE(c.terms, ''), c.status, c.notes, c.created_at, c.updated_at FROM contracts c JOIN units u ON u.id = c.unit_id`
+	args := []interface{}{}
+	if buildingID != "" {
+		query += ` WHERE u.building_id = ?`
+		args = append(args, buildingID)
+	}
+	query += ` ORDER BY c.created_at DESC`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return []*Contract{}
 	}
@@ -263,8 +277,15 @@ func (s *MySQLService) CreateInvoice(invoice Invoice) (*Invoice, error) {
 	return &invoice, nil
 }
 
-func (s *MySQLService) ListInvoices() []*Invoice {
-	rows, err := s.db.Query(`SELECT id, contract_id, tenant_id, building_id, unit_id, invoice_number, issue_date, due_date, amount, description, status, created_at, updated_at FROM invoices ORDER BY created_at DESC`)
+func (s *MySQLService) ListInvoices(buildingID string) []*Invoice {
+	query := `SELECT id, contract_id, tenant_id, building_id, unit_id, invoice_number, issue_date, due_date, amount, description, status, created_at, updated_at FROM invoices`
+	args := []interface{}{}
+	if buildingID != "" {
+		query += ` WHERE building_id = ?`
+		args = append(args, buildingID)
+	}
+	query += ` ORDER BY created_at DESC`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return []*Invoice{}
 	}
@@ -316,8 +337,15 @@ func (s *MySQLService) CreatePayment(payment Payment) (*Payment, error) {
 	return &payment, nil
 }
 
-func (s *MySQLService) ListPayments() []*Payment {
-	rows, err := s.db.Query(`SELECT p.id, p.tenant_id, p.invoice_id, p.building_id, p.unit_id, p.payment_reference, p.amount, p.payment_date, pm.name, COALESCE(p.receipt_number, ''), COALESCE(p.notes, ''), p.created_at FROM payments p JOIN payment_methods pm ON pm.id = p.payment_method_id ORDER BY p.created_at DESC`)
+func (s *MySQLService) ListPayments(buildingID string) []*Payment {
+	query := `SELECT p.id, p.tenant_id, p.invoice_id, p.building_id, p.unit_id, p.payment_reference, p.amount, p.payment_date, pm.name, COALESCE(p.receipt_number, ''), COALESCE(p.notes, ''), p.created_at FROM payments p JOIN payment_methods pm ON pm.id = p.payment_method_id`
+	args := []interface{}{}
+	if buildingID != "" {
+		query += ` WHERE p.building_id = ?`
+		args = append(args, buildingID)
+	}
+	query += ` ORDER BY p.created_at DESC`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return []*Payment{}
 	}
@@ -332,13 +360,27 @@ func (s *MySQLService) ListPayments() []*Payment {
 	return items
 }
 
-func (s *MySQLService) DashboardSummary() DashboardSummary {
+func (s *MySQLService) DashboardSummary(buildingID string) DashboardSummary {
 	summary := DashboardSummary{}
 	for _, counter := range []struct {
 		table       string
 		destination *int
 	}{{"buildings", &summary.Buildings}, {"floors", &summary.Floors}, {"units", &summary.Units}, {"tenants", &summary.Tenants}, {"contracts", &summary.Contracts}, {"invoices", &summary.Invoices}} {
-		_ = s.db.QueryRow("SELECT COUNT(*) FROM " + counter.table).Scan(counter.destination)
+		query := "SELECT COUNT(*) FROM " + counter.table
+		args := []interface{}{}
+		if buildingID != "" {
+			if counter.table == "buildings" {
+				query += " WHERE id = ?"
+			} else if counter.table == "tenants" {
+				query = "SELECT COUNT(DISTINCT c.tenant_id) FROM contracts c JOIN units u ON u.id = c.unit_id WHERE u.building_id = ?"
+			} else if counter.table == "contracts" {
+				query = "SELECT COUNT(*) FROM contracts c JOIN units u ON u.id = c.unit_id WHERE u.building_id = ?"
+			} else {
+				query += " WHERE building_id = ?"
+			}
+			args = append(args, buildingID)
+		}
+		_ = s.db.QueryRow(query, args...).Scan(counter.destination)
 	}
 	return summary
 }

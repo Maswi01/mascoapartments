@@ -163,7 +163,7 @@ function App() {
   const [documentName, setDocumentName] = useState('')
   const [documentFile, setDocumentFile] = useState<File | null>(null)
   const [view, setView] = useState<View>('hq')
-  const [selectedBuildingID, setSelectedBuildingID] = useState('hq')
+  const [selectedBuildingID, setSelectedBuildingID] = useState(() => localStorage.getItem('masco-building-id') ?? 'hq')
   const [formError, setFormError] = useState('')
   const [profileForm, setProfileForm] = useState({ full_name: session?.user.full_name ?? '', email: '' })
   const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
@@ -200,11 +200,11 @@ function App() {
     try {
         const [buildingsResponse, tenantsResponse, contractsResponse, invoicesResponse, paymentsResponse, dashboardResponse] = await Promise.all([
         apiFetch('/buildings'),
-        apiFetch('/tenants'),
-        apiFetch('/contracts'),
-        apiFetch('/invoices'),
-        apiFetch('/payments'),
-        apiFetch('/dashboard'),
+        apiFetch(`/tenants${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
+        apiFetch(`/contracts${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
+        apiFetch(`/invoices${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
+        apiFetch(`/payments${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
+        apiFetch(`/dashboard${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
       ])
 
       const buildingData = await buildingsResponse.json()
@@ -232,7 +232,7 @@ function App() {
 
   useEffect(() => {
     if (session) void loadData()
-  }, [session])
+  }, [session, selectedBuildingID])
 
   useEffect(() => {
     if (!session) return
@@ -242,6 +242,7 @@ function App() {
   }, [session])
 
   useEffect(() => {
+    localStorage.setItem('masco-building-id', selectedBuildingID)
     if (!session || selectedBuildingID === 'hq') {
       setUnits([])
       return
@@ -512,6 +513,11 @@ function App() {
     setView(nextView)
   }
 
+  const switchBuilding = (buildingID: string) => {
+    setSelectedBuildingID(buildingID)
+    setView('hq')
+  }
+
   return (
     <main className="page-shell">
       <aside className="sidebar">
@@ -537,7 +543,7 @@ function App() {
             <h1>{pageTitle[view]}</h1>
           </div>
           <label className="building-switcher">Portfolio context
-            <select value={selectedBuildingID} onChange={(event) => setSelectedBuildingID(event.target.value)}>
+            <select value={selectedBuildingID} onChange={(event) => switchBuilding(event.target.value)}>
               <option value="hq">HQ - all buildings</option>
               {buildings.map((building) => <option key={building.id} value={building.id}>{building.name}</option>)}
             </select>

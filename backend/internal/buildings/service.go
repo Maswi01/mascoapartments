@@ -148,9 +148,12 @@ func (s *Service) CreateTenant(t Tenant) (*Tenant, error) {
 	return s.tenants[t.ID], nil
 }
 
-func (s *Service) ListTenants() []*Tenant {
+func (s *Service) ListTenants(buildingID string) []*Tenant {
 	items := make([]*Tenant, 0, len(s.tenants))
 	for _, tenant := range s.tenants {
+		if buildingID != "" && !s.tenantInBuilding(tenant.ID, buildingID) {
+			continue
+		}
 		items = append(items, tenant)
 	}
 	return items
@@ -182,9 +185,15 @@ func (s *Service) CreateContract(c Contract) (*Contract, error) {
 	return s.contracts[c.ID], nil
 }
 
-func (s *Service) ListContracts() []*Contract {
+func (s *Service) ListContracts(buildingID string) []*Contract {
 	items := make([]*Contract, 0, len(s.contracts))
 	for _, contract := range s.contracts {
+		if buildingID != "" {
+			unit, ok := s.units[contract.UnitID]
+			if !ok || unit.BuildingID != buildingID {
+				continue
+			}
+		}
 		items = append(items, contract)
 	}
 	return items
@@ -239,9 +248,12 @@ func (s *Service) CreateInvoice(i Invoice) (*Invoice, error) {
 	return s.invoices[i.ID], nil
 }
 
-func (s *Service) ListInvoices() []*Invoice {
+func (s *Service) ListInvoices(buildingID string) []*Invoice {
 	items := make([]*Invoice, 0, len(s.invoices))
 	for _, invoice := range s.invoices {
+		if buildingID != "" && invoice.BuildingID != buildingID {
+			continue
+		}
 		items = append(items, invoice)
 	}
 	return items
@@ -257,24 +269,64 @@ func (s *Service) CreatePayment(payment Payment) (*Payment, error) {
 	return s.payments[payment.ID], nil
 }
 
-func (s *Service) ListPayments() []*Payment {
+func (s *Service) ListPayments(buildingID string) []*Payment {
 	items := make([]*Payment, 0, len(s.payments))
 	for _, payment := range s.payments {
+		if buildingID != "" && payment.BuildingID != buildingID {
+			continue
+		}
 		items = append(items, payment)
 	}
 	return items
 }
 
-func (s *Service) DashboardSummary() DashboardSummary {
-	summary := DashboardSummary{
-		Buildings: len(s.buildings),
-		Floors:    len(s.floors),
-		Units:     len(s.units),
-		Tenants:   len(s.tenants),
-		Contracts: len(s.contracts),
-		Invoices:  len(s.invoices),
+func (s *Service) DashboardSummary(buildingID string) DashboardSummary {
+	summary := DashboardSummary{}
+	if buildingID == "" {
+		summary.Buildings, summary.Floors, summary.Units = len(s.buildings), len(s.floors), len(s.units)
+		summary.Tenants, summary.Contracts, summary.Invoices = len(s.tenants), len(s.contracts), len(s.invoices)
+		return summary
+	}
+	if _, ok := s.buildings[buildingID]; ok {
+		summary.Buildings = 1
+	}
+	for _, floor := range s.floors {
+		if floor.BuildingID == buildingID {
+			summary.Floors++
+		}
+	}
+	for _, unit := range s.units {
+		if unit.BuildingID == buildingID {
+			summary.Units++
+		}
+	}
+	for _, tenant := range s.tenants {
+		if s.tenantInBuilding(tenant.ID, buildingID) {
+			summary.Tenants++
+		}
+	}
+	for _, contract := range s.contracts {
+		if unit, ok := s.units[contract.UnitID]; ok && unit.BuildingID == buildingID {
+			summary.Contracts++
+		}
+	}
+	for _, invoice := range s.invoices {
+		if invoice.BuildingID == buildingID {
+			summary.Invoices++
+		}
 	}
 	return summary
+}
+
+func (s *Service) tenantInBuilding(tenantID string, buildingID string) bool {
+	for _, contract := range s.contracts {
+		if contract.TenantID == tenantID {
+			if unit, ok := s.units[contract.UnitID]; ok && unit.BuildingID == buildingID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func randomID() string {

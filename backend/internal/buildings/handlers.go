@@ -24,18 +24,18 @@ type ServiceAPI interface {
 	ListUnitsByBuilding(string) []*Unit
 	GetUnit(string) (*Unit, error)
 	CreateTenant(Tenant) (*Tenant, error)
-	ListTenants() []*Tenant
+	ListTenants(string) []*Tenant
 	GetTenant(string) (*Tenant, error)
 	CreateContract(Contract) (*Contract, error)
-	ListContracts() []*Contract
+	ListContracts(string) []*Contract
 	GetContract(string) (*Contract, error)
 	CreateDocument(Document) (*Document, error)
 	ListDocumentsByContract(string) []*Document
 	CreateInvoice(Invoice) (*Invoice, error)
-	ListInvoices() []*Invoice
+	ListInvoices(string) []*Invoice
 	CreatePayment(Payment) (*Payment, error)
-	ListPayments() []*Payment
-	DashboardSummary() DashboardSummary
+	ListPayments(string) []*Payment
+	DashboardSummary(string) DashboardSummary
 }
 
 func NewHandler(service ServiceAPI) *Handler {
@@ -66,7 +66,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *Handler) dashboard(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.DashboardSummary()})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.DashboardSummary(request.URL.Query().Get("building_id"))})
 }
 
 func (h *Handler) listBuildings(writer http.ResponseWriter, request *http.Request) {
@@ -144,7 +144,7 @@ func (h *Handler) createUnit(writer http.ResponseWriter, request *http.Request) 
 
 func (h *Handler) listTenants(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListTenants()})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListTenants(request.URL.Query().Get("building_id"))})
 }
 
 func (h *Handler) createTenant(writer http.ResponseWriter, request *http.Request) {
@@ -167,7 +167,7 @@ func (h *Handler) createTenant(writer http.ResponseWriter, request *http.Request
 
 func (h *Handler) listContracts(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListContracts()})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListContracts(request.URL.Query().Get("building_id"))})
 }
 
 func (h *Handler) createContract(writer http.ResponseWriter, request *http.Request) {
@@ -319,7 +319,7 @@ func (h *Handler) uploadDocument(writer http.ResponseWriter, request *http.Reque
 
 func (h *Handler) listInvoices(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListInvoices()})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListInvoices(request.URL.Query().Get("building_id"))})
 }
 
 func (h *Handler) createInvoice(writer http.ResponseWriter, request *http.Request) {
@@ -342,7 +342,7 @@ func (h *Handler) createInvoice(writer http.ResponseWriter, request *http.Reques
 
 func (h *Handler) listPayments(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListPayments()})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListPayments(request.URL.Query().Get("building_id"))})
 }
 
 func (h *Handler) createPayment(writer http.ResponseWriter, request *http.Request) {
