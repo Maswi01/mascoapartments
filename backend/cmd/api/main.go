@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"log"
@@ -32,6 +33,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", healthHandler)
 	mux.HandleFunc("POST /api/v1/auth/login", loginHandler(authService))
+	mux.HandleFunc("GET /api/v1/auth/me", meHandler(authService))
+	mux.HandleFunc("PUT /api/v1/auth/me", updateProfileHandler(authService))
+	mux.HandleFunc("POST /api/v1/auth/me/password", changePasswordHandler(authService))
 	handler.RegisterRoutes(mux)
 
 	server := &http.Server{
@@ -63,6 +67,10 @@ func loginHandler(authService *auth.Service) http.HandlerFunc {
 	}
 }
 
+type contextKey string
+
+const currentUserContextKey contextKey = "currentUser"
+
 func requireAuth(authService *auth.Service, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/api/v1/health" || request.URL.Path == "/api/v1/auth/login" || request.Method == http.MethodOptions {
@@ -74,12 +82,79 @@ func requireAuth(authService *auth.Service, next http.Handler) http.Handler {
 			writeAuthError(writer, http.StatusUnauthorized, "authentication required")
 			return
 		}
-		if _, err := authService.Authenticate(value); err != nil {
-			writeAuthError(writer, http.StatusUnauthorized, "invalid access token")
+		currentUser, err := authService.Authenticate(value)
+		if err != nil {
+			writeAuthError(writer, http.StatusUnauthorized, "session expired, please sign in again")
 			return
 		}
-		next.ServeHTTP(writer, request)
+		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), currentUserContextKey, currentUser)))
 	})
+}
+
+func currentUserFromRequest(request *http.Request) (*auth.User, bool) {
+	user, ok := request.Context().Value(currentUserContextKey).(*auth.User)
+	return user, ok
+}
+
+func meHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		user, ok := currentUserFromRequest(request)
+		if !ok {
+			writeAuthError(writer, http.StatusUnauthorized, "session expired, please sign in again")
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(writer).Encode(user)
+	}
+}
+
+func updateProfileHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		user, ok := currentUserFromRequest(request)
+		if !ok {
+			writeAuthError(writer, http.StatusUnauthorized, "session expired, please sign in again")
+			return
+		}
+		var payload struct {
+			FullName string `json:"full_name"`
+			Email    string `json:"email"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, "invalid profile payload")
+			return
+		}
+		updated, err := authService.UpdateProfile(user.ID, payload.FullName, payload.Email)
+		if err != nil {
+			writeAuthError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(writer).Encode(updated)
+	}
+}
+
+func changePasswordHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		user, ok := currentUserFromRequest(request)
+		if !ok {
+			writeAuthError(writer, http.StatusUnauthorized, "session expired, please sign in again")
+			return
+		}
+		var payload struct {
+			CurrentPassword string `json:"current_password"`
+			NewPassword     string `json:"new_password"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, "invalid password payload")
+			return
+		}
+		if err := authService.ChangePassword(user.ID, payload.CurrentPassword, payload.NewPassword); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(writer).Encode(map[string]string{"status": "password updated"})
+	}
 }
 
 func writeAuthError(writer http.ResponseWriter, code int, message string) {

@@ -94,6 +94,47 @@ func (s *Service) Authenticate(tokenString string) (*User, error) {
 	return &user, nil
 }
 
+func (s *Service) UpdateProfile(userID uint64, fullName string, email string) (*User, error) {
+	if fullName == "" || email == "" {
+		return nil, errors.New("full name and email are required")
+	}
+	if _, err := s.db.Exec(`UPDATE users SET full_name = ?, email = ? WHERE id = ?`, fullName, email, userID); err != nil {
+		return nil, fmt.Errorf("update profile: %w", err)
+	}
+	user := &User{}
+	err := s.db.QueryRow(`SELECT id, username, email, full_name FROM users WHERE id = ?`, userID).Scan(&user.ID, &user.Username, &user.Email, &user.FullName)
+	if err != nil {
+		return nil, fmt.Errorf("load user: %w", err)
+	}
+	roles, err := s.userRoles(user.ID)
+	if err != nil {
+		return nil, err
+	}
+	user.Roles = roles
+	return user, nil
+}
+
+func (s *Service) ChangePassword(userID uint64, currentPassword string, newPassword string) error {
+	if len(newPassword) < 8 {
+		return errors.New("new password must be at least 8 characters")
+	}
+	var passwordHash string
+	if err := s.db.QueryRow(`SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&passwordHash); err != nil {
+		return fmt.Errorf("load user: %w", err)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(currentPassword)) != nil {
+		return errors.New("current password is incorrect")
+	}
+	nextHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE users SET password_hash = ? WHERE id = ?`, string(nextHash), userID); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) userRoles(userID uint64) ([]string, error) {
 	rows, err := s.db.Query(`SELECT r.name FROM roles r JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ? ORDER BY r.name`, userID)
 	if err != nil {

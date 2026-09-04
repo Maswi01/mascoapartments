@@ -138,7 +138,7 @@ type Session = {
   }
 }
 
-type View = 'hq' | 'buildings' | 'units' | 'tenants' | 'contracts' | 'invoices' | 'payments'
+type View = 'hq' | 'buildings' | 'units' | 'tenants' | 'contracts' | 'invoices' | 'payments' | 'settings'
 
 function App() {
   const [session, setSession] = useState<Session | null>(() => {
@@ -165,11 +165,25 @@ function App() {
   const [view, setView] = useState<View>('hq')
   const [selectedBuildingID, setSelectedBuildingID] = useState('hq')
   const [formError, setFormError] = useState('')
+  const [profileForm, setProfileForm] = useState({ full_name: session?.user.full_name ?? '', email: '' })
+  const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
 
-  const apiFetch = (path: string, options: RequestInit = {}) => fetch(`${apiURL}${path}`, {
-    ...options,
-    headers: { ...options.headers, Authorization: `Bearer ${session?.token ?? ''}` },
-  })
+  const logout = () => {
+    localStorage.removeItem('masco-session')
+    setSession(null)
+  }
+
+  const apiFetch = async (path: string, options: RequestInit = {}) => {
+    const response = await fetch(`${apiURL}${path}`, {
+      ...options,
+      headers: { ...options.headers, Authorization: `Bearer ${session?.token ?? ''}` },
+    })
+    if (response.status === 401) {
+      logout()
+      void Swal.fire({ icon: 'info', title: 'Session expired', text: 'Please sign in again.', confirmButtonColor: '#133d32' })
+    }
+    return response
+  }
 
   const showRequestError = async (response: Response, fallback: string) => {
     const payload = await response.json().catch(() => ({ error: fallback })) as { error?: string }
@@ -215,6 +229,13 @@ function App() {
 
   useEffect(() => {
     if (session) void loadData()
+  }, [session])
+
+  useEffect(() => {
+    if (!session) return
+    void apiFetch('/auth/me').then((response) => response.ok ? response.json() : null).then((user) => {
+      if (user) setProfileForm({ full_name: user.full_name, email: user.email })
+    }).catch(() => {})
   }, [session])
 
   useEffect(() => {
@@ -369,6 +390,51 @@ function App() {
     void showSuccess('Payment recorded')
   }
 
+  const handleLogout = async () => {
+    const confirmation = await Swal.fire({ icon: 'question', title: 'Sign out?', showCancelButton: true, confirmButtonText: 'Sign out', confirmButtonColor: '#133d32' })
+    if (!confirmation.isConfirmed) return
+    logout()
+  }
+
+  const handleProfileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setProfileForm((current) => ({ ...current, [event.target.name]: event.target.value }))
+  }
+
+  const handleProfileSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    const response = await apiFetch('/auth/me', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profileForm) })
+    if (!response.ok) {
+      await showRequestError(response, 'Could not update profile.')
+      return
+    }
+    const updated = await response.json() as Session['user']
+    if (session) {
+      const nextSession = { ...session, user: { ...session.user, full_name: updated.full_name } }
+      localStorage.setItem('masco-session', JSON.stringify(nextSession))
+      setSession(nextSession)
+    }
+    void showSuccess('Profile updated')
+  }
+
+  const handlePasswordChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setPasswordForm((current) => ({ ...current, [event.target.name]: event.target.value }))
+  }
+
+  const handlePasswordSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      await Swal.fire({ icon: 'error', title: 'Passwords do not match', confirmButtonColor: '#133d32' })
+      return
+    }
+    const response = await apiFetch('/auth/me/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current_password: passwordForm.current_password, new_password: passwordForm.new_password }) })
+    if (!response.ok) {
+      await showRequestError(response, 'Could not change password.')
+      return
+    }
+    setPasswordForm({ current_password: '', new_password: '', confirm_password: '' })
+    void showSuccess('Password changed')
+  }
+
   const handleDocumentSubmit = async (event: FormEvent) => {
     event.preventDefault()
     if (!documentContractID || !documentFile) return
@@ -434,6 +500,7 @@ function App() {
     contracts: 'Contracts',
     invoices: 'Invoices',
     payments: 'Payments',
+    settings: 'Settings',
   }
 
   const showView = (nextView: View) => {
@@ -453,8 +520,10 @@ function App() {
           <button className={`nav-link ${view === 'tenants' ? 'active' : ''}`} onClick={() => showView('tenants')}>Tenants</button>
           <button className={`nav-link ${view === 'contracts' ? 'active' : ''}`} onClick={() => showView('contracts')}>Contracts</button>
           <button className={`nav-link ${view === 'invoices' ? 'active' : ''}`} onClick={() => showView('invoices')}>Invoices</button>
-                  <button className={`nav-link ${view === 'payments' ? 'active' : ''}`} onClick={() => showView('payments')}>Payments</button>
+          <button className={`nav-link ${view === 'payments' ? 'active' : ''}`} onClick={() => showView('payments')}>Payments</button>
+          <button className={`nav-link ${view === 'settings' ? 'active' : ''}`} onClick={() => showView('settings')}>Settings</button>
         </nav>
+        <button className="logout-button" type="button" onClick={() => void handleLogout()}>Sign out</button>
       </aside>
 
       <section className="content">
@@ -812,6 +881,22 @@ function App() {
             <button className="primary-button" type="submit">Record payment</button>
           </form>
           <div className="panel list-panel"><h2>Payment history</h2><div className="building-list">{payments.length === 0 ? <p className="empty-state">No payments recorded.</p> : payments.map((payment) => <article className="building-card" key={payment.id}><div className="building-header"><div><h3>${payment.amount}</h3><span className="code-tag">{payment.payment_method}</span></div><span className="status-badge">{payment.payment_date}</span></div><p>{payment.payment_reference}</p><div className="meta-row"><span>Invoice #{payment.invoice_id}</span><span>{payment.receipt_number || 'No receipt number'}</span></div></article>)}</div></div>
+        </div>}
+
+        {view === 'settings' && <div className="panel-grid">
+          <form className="panel form-panel" onSubmit={handleProfileSubmit}>
+            <h2>Profile</h2>
+            <label>Full name<input name="full_name" value={profileForm.full_name} onChange={handleProfileChange} required /></label>
+            <label>Email<input name="email" type="email" value={profileForm.email} onChange={handleProfileChange} required /></label>
+            <button className="primary-button" type="submit">Save profile</button>
+          </form>
+          <form className="panel form-panel" onSubmit={handlePasswordSubmit}>
+            <h2>Change password</h2>
+            <label>Current password<input name="current_password" type="password" value={passwordForm.current_password} onChange={handlePasswordChange} autoComplete="current-password" required /></label>
+            <label>New password<input name="new_password" type="password" value={passwordForm.new_password} onChange={handlePasswordChange} autoComplete="new-password" minLength={8} required /></label>
+            <label>Confirm new password<input name="confirm_password" type="password" value={passwordForm.confirm_password} onChange={handlePasswordChange} autoComplete="new-password" minLength={8} required /></label>
+            <button className="primary-button" type="submit">Change password</button>
+          </form>
         </div>}
       </section>
     </main>
