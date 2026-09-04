@@ -15,7 +15,16 @@ type User struct {
 	Username string   `json:"username"`
 	Email    string   `json:"email"`
 	FullName string   `json:"full_name"`
+	Status   string   `json:"status"`
 	Roles    []string `json:"roles"`
+}
+
+type UserInput struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	FullName string `json:"full_name"`
+	Password string `json:"password"`
+	Status   string `json:"status"`
 }
 
 type Service struct {
@@ -133,6 +142,84 @@ func (s *Service) ChangePassword(userID uint64, currentPassword string, newPassw
 		return fmt.Errorf("update password: %w", err)
 	}
 	return nil
+}
+
+func (s *Service) ListUsers() ([]User, error) {
+	rows, err := s.db.Query(`SELECT id, username, email, full_name, status FROM users ORDER BY full_name`)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	defer rows.Close()
+	users := make([]User, 0)
+	for rows.Next() {
+		user := User{}
+		if err := rows.Scan(&user.ID, &user.Username, &user.Email, &user.FullName, &user.Status); err != nil {
+			return nil, err
+		}
+		user.Roles, err = s.userRoles(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+func (s *Service) CreateUser(input UserInput) (*User, error) {
+	if input.Username == "" || input.Email == "" || input.FullName == "" || len(input.Password) < 8 {
+		return nil, errors.New("username, email, full name, and an 8 character password are required")
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+	status := input.Status
+	if status == "" {
+		status = "Active"
+	}
+	result, err := s.db.Exec(`INSERT INTO users (username, email, password_hash, full_name, status) VALUES (?, ?, ?, ?, ?)`, input.Username, input.Email, string(passwordHash), input.FullName, status)
+	if err != nil {
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+	return &User{ID: uint64(id), Username: input.Username, Email: input.Email, FullName: input.FullName, Roles: []string{}}, nil
+}
+
+func (s *Service) UpdateUserStatus(userID uint64, status string) error {
+	if status != "Active" && status != "Inactive" && status != "Suspended" {
+		return errors.New("invalid user status")
+	}
+	_, err := s.db.Exec(`UPDATE users SET status = ? WHERE id = ?`, status, userID)
+	return err
+}
+
+func (s *Service) ListRoles() ([]string, error) {
+	rows, err := s.db.Query(`SELECT name FROM roles ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list roles: %w", err)
+	}
+	defer rows.Close()
+	roles := make([]string, 0)
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, err
+		}
+		roles = append(roles, role)
+	}
+	return roles, rows.Err()
+}
+
+func (s *Service) AssignRole(userID uint64, roleName string) error {
+	var roleID uint64
+	if err := s.db.QueryRow(`SELECT id FROM roles WHERE name = ?`, roleName).Scan(&roleID); err != nil {
+		return errors.New("role not found")
+	}
+	_, err := s.db.Exec(`INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)`, userID, roleID)
+	return err
 }
 
 func (s *Service) userRoles(userID uint64) ([]string, error) {

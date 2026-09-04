@@ -205,7 +205,7 @@ func (s *MySQLService) CreateContract(contract Contract) (*Contract, error) {
 }
 
 func (s *MySQLService) ListContracts(buildingID uint64) []*Contract {
-	query := `SELECT c.id, c.unit_id, c.tenant_id, c.contract_type, c.start_date, COALESCE(c.end_date, ''), c.monthly_rent, c.payment_method, c.payment_frequency, c.utility_responsibility, COALESCE(c.terms, ''), c.status, c.notes, c.created_at, c.updated_at FROM contracts c JOIN units u ON u.id = c.unit_id`
+	query := `SELECT c.id, u.building_id, c.unit_id, c.tenant_id, c.contract_type, c.start_date, COALESCE(c.end_date, ''), c.monthly_rent, c.payment_method, c.payment_frequency, c.utility_responsibility, COALESCE(c.terms, ''), c.status, c.notes, c.created_at, c.updated_at FROM contracts c JOIN units u ON u.id = c.unit_id`
 	args := []interface{}{}
 	if buildingID != 0 {
 		query += ` WHERE u.building_id = ?`
@@ -220,7 +220,7 @@ func (s *MySQLService) ListContracts(buildingID uint64) []*Contract {
 	items := make([]*Contract, 0)
 	for rows.Next() {
 		item := &Contract{}
-		if rows.Scan(&item.ID, &item.UnitID, &item.TenantID, &item.ContractType, &item.StartDate, &item.EndDate, &item.MonthlyRent, &item.PaymentMethod, &item.PaymentFrequency, &item.UtilityResponsibility, &item.Terms, &item.Status, &item.Notes, &item.CreatedAt, &item.UpdatedAt) == nil {
+		if rows.Scan(&item.ID, &item.BuildingID, &item.UnitID, &item.TenantID, &item.ContractType, &item.StartDate, &item.EndDate, &item.MonthlyRent, &item.PaymentMethod, &item.PaymentFrequency, &item.UtilityResponsibility, &item.Terms, &item.Status, &item.Notes, &item.CreatedAt, &item.UpdatedAt) == nil {
 			items = append(items, item)
 		}
 	}
@@ -380,13 +380,14 @@ func (s *MySQLService) DashboardSummary(buildingID uint64) DashboardSummary {
 		query := "SELECT COUNT(*) FROM " + counter.table
 		args := []interface{}{}
 		if buildingID != 0 {
-			if counter.table == "buildings" {
+			switch counter.table {
+			case "buildings":
 				query += " WHERE id = ?"
-			} else if counter.table == "tenants" {
+			case "tenants":
 				query = "SELECT COUNT(DISTINCT c.tenant_id) FROM contracts c JOIN units u ON u.id = c.unit_id WHERE u.building_id = ?"
-			} else if counter.table == "contracts" {
+			case "contracts":
 				query = "SELECT COUNT(*) FROM contracts c JOIN units u ON u.id = c.unit_id WHERE u.building_id = ?"
-			} else {
+			default:
 				query += " WHERE building_id = ?"
 			}
 			args = append(args, buildingID)

@@ -93,9 +93,12 @@ type UnitRecord = {
 
 type ContractRecord = {
   id: string
+  building_id: number
   unit_id: string
   tenant_id: string
   contract_type: string
+  start_date: string
+  end_date: string
   monthly_rent: number
   payment_method?: string
   payment_frequency?: string
@@ -105,6 +108,7 @@ type ContractRecord = {
 
 type InvoiceRecord = {
   id: string
+  building_id: number
   number: string
   amount: number
   status: string
@@ -118,15 +122,7 @@ type PaymentRecord = {
   payment_date: string
   payment_method: string
   receipt_number?: string
-}
-
-type DashboardStats = {
-  buildings: number
-  floors: number
-  units: number
-  tenants: number
-  contracts: number
-  invoices: number
+  building_id: number
 }
 
 type Session = {
@@ -138,7 +134,8 @@ type Session = {
   }
 }
 
-type View = 'hq' | 'buildings' | 'units' | 'tenants' | 'contracts' | 'invoices' | 'payments' | 'settings'
+type AdminUser = { id: number; username: string; email: string; full_name: string; status: string; roles: string[] }
+type View = 'hq' | 'buildings' | 'units' | 'tenants' | 'contracts' | 'invoices' | 'payments' | 'registration' | 'reports' | 'settings'
 
 function App() {
   const [session, setSession] = useState<Session | null>(() => {
@@ -153,7 +150,8 @@ function App() {
   const [contracts, setContracts] = useState<ContractRecord[]>([])
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([])
   const [payments, setPayments] = useState<PaymentRecord[]>([])
-  const [stats, setStats] = useState<DashboardStats>({ buildings: 0, floors: 0, units: 0, tenants: 0, contracts: 0, invoices: 0 })
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
+  const [roles, setRoles] = useState<string[]>([])
   const [form, setForm] = useState(defaultForm)
   const [tenantForm, setTenantForm] = useState(defaultTenantForm)
   const [unitForm, setUnitForm] = useState(defaultUnitForm)
@@ -167,6 +165,7 @@ function App() {
   const [formError, setFormError] = useState('')
   const [profileForm, setProfileForm] = useState({ full_name: session?.user.full_name ?? '', email: '' })
   const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
+  const [newUserForm, setNewUserForm] = useState({ username: '', email: '', full_name: '', password: '' })
 
   const logout = () => {
     localStorage.removeItem('masco-session')
@@ -198,13 +197,12 @@ function App() {
   const loadData = async () => {
     if (!session) return
     try {
-        const [buildingsResponse, tenantsResponse, contractsResponse, invoicesResponse, paymentsResponse, dashboardResponse] = await Promise.all([
+        const [buildingsResponse, tenantsResponse, contractsResponse, invoicesResponse, paymentsResponse] = await Promise.all([
         apiFetch('/buildings'),
         apiFetch(`/tenants${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
         apiFetch(`/contracts${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
         apiFetch(`/invoices${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
         apiFetch(`/payments${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
-        apiFetch(`/dashboard${selectedBuildingID === 'hq' ? '' : `?building_id=${selectedBuildingID}`}`),
       ])
 
       const buildingData = await buildingsResponse.json()
@@ -212,21 +210,18 @@ function App() {
       const contractData = await contractsResponse.json()
       const invoiceData = await invoicesResponse.json()
       const paymentData = await paymentsResponse.json()
-      const dashboardData = await dashboardResponse.json()
 
       setBuildings(buildingData.data ?? [])
       setTenants(tenantData.data ?? [])
       setContracts(contractData.data ?? [])
       setInvoices(invoiceData.data ?? [])
       setPayments(paymentData.data ?? [])
-      setStats(dashboardData.data ?? { buildings: 0, floors: 0, units: 0, tenants: 0, contracts: 0, invoices: 0 })
     } catch {
       setBuildings([])
       setTenants([])
       setContracts([])
       setInvoices([])
         setPayments([])
-      setStats({ buildings: 0, floors: 0, units: 0, tenants: 0, contracts: 0, invoices: 0 })
     }
   }
 
@@ -249,6 +244,16 @@ function App() {
     }
     void apiFetch(`/buildings/${selectedBuildingID}/units`).then((response) => response.json()).then((payload) => setUnits(payload.data ?? [])).catch(() => setUnits([]))
   }, [selectedBuildingID, session])
+
+  useEffect(() => {
+    if (view !== 'registration' || !session) return
+    void Promise.all([apiFetch('/auth/users'), apiFetch('/auth/roles')]).then(async ([usersResponse, rolesResponse]) => {
+      const usersPayload = await usersResponse.json()
+      const rolesPayload = await rolesResponse.json()
+      setAdminUsers(usersPayload.data ?? [])
+      setRoles(rolesPayload.data ?? [])
+    }).catch(() => {})
+  }, [view, session])
 
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault()
@@ -442,6 +447,29 @@ function App() {
     void showSuccess('Password changed')
   }
 
+  const handleCreateUser = async (event: FormEvent) => {
+    event.preventDefault()
+    const response = await apiFetch('/auth/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUserForm) })
+    if (!response.ok) { await showRequestError(response, 'Could not register user.'); return }
+    setNewUserForm({ username: '', email: '', full_name: '', password: '' })
+    setView('registration')
+    void showSuccess('User registered')
+  }
+
+  const updateUserStatus = async (userID: number, status: string) => {
+    const response = await apiFetch(`/auth/users/${userID}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) })
+    if (!response.ok) { await showRequestError(response, 'Could not update user.'); return }
+    setAdminUsers((current) => current.map((user) => user.id === userID ? { ...user, status } : user))
+    void showSuccess('User updated')
+  }
+
+  const assignUserRole = async (userID: number, role: string) => {
+    const response = await apiFetch(`/auth/users/${userID}/roles`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) })
+    if (!response.ok) { await showRequestError(response, 'Could not assign role.'); return }
+    setAdminUsers((current) => current.map((user) => user.id === userID && !user.roles.includes(role) ? { ...user, roles: [...user.roles, role] } : user))
+    void showSuccess('Role assigned')
+  }
+
   const handleDocumentSubmit = async (event: FormEvent) => {
     event.preventDefault()
     if (!documentContractID || !documentFile) return
@@ -507,6 +535,8 @@ function App() {
     contracts: 'Contracts',
     invoices: 'Invoices',
     payments: 'Payments',
+    registration: 'Registration',
+    reports: 'Reports',
     settings: 'Settings',
   }
 
@@ -514,6 +544,23 @@ function App() {
     setFormError('')
     setView(nextView)
   }
+
+  const today = new Date()
+  const daysUntil = (date: string) => Math.ceil((new Date(`${date}T00:00:00`).getTime() - today.getTime()) / 86400000)
+  const scopedContracts = contracts.filter((contract) => selectedBuildingID === 'hq' || contract.building_id === Number(selectedBuildingID))
+  const activeContracts = scopedContracts.filter((contract) => contract.status === 'Active')
+  const expiring7 = activeContracts.filter((contract) => daysUntil(contract.end_date) >= 0 && daysUntil(contract.end_date) <= 7)
+  const expiring30 = activeContracts.filter((contract) => daysUntil(contract.end_date) >= 0 && daysUntil(contract.end_date) <= 30)
+  const expiredContracts = scopedContracts.filter((contract) => contract.end_date && daysUntil(contract.end_date) < 0 && contract.status !== 'Cancelled')
+  const scopedInvoices = invoices.filter((invoice) => selectedBuildingID === 'hq' || invoice.building_id === Number(selectedBuildingID))
+  const unpaidInvoices = scopedInvoices.filter((invoice) => invoice.status === 'Pending' || invoice.status === 'Partially Paid' || invoice.status === 'Overdue')
+  const scopedPayments = payments.filter((payment) => selectedBuildingID === 'hq' || payment.building_id === Number(selectedBuildingID))
+  const paymentsToday = scopedPayments.filter((payment) => payment.payment_date === today.toISOString().slice(0, 10))
+  const branchCards = buildings.map((building) => {
+    const branchContracts = contracts.filter((contract) => String(contract.building_id) === String(building.id))
+    const branchInvoices = invoices.filter((invoice) => String(invoice.building_id) === String(building.id))
+    return { building, active: branchContracts.filter((contract) => contract.status === 'Active').length, expiring7: branchContracts.filter((contract) => contract.status === 'Active' && daysUntil(contract.end_date) >= 0 && daysUntil(contract.end_date) <= 7).length, expiring30: branchContracts.filter((contract) => contract.status === 'Active' && daysUntil(contract.end_date) >= 0 && daysUntil(contract.end_date) <= 30).length, expired: branchContracts.filter((contract) => contract.end_date && daysUntil(contract.end_date) < 0 && contract.status !== 'Cancelled').length, unpaid: branchInvoices.filter((invoice) => invoice.status !== 'Paid' && invoice.status !== 'Cancelled').length }
+  })
 
   const switchBuilding = (buildingID: string) => {
     setSelectedBuildingID(buildingID)
@@ -527,12 +574,17 @@ function App() {
         <p className="user-name">{session.user.full_name}</p>
         <nav className="nav">
           <button className={`nav-link ${view === 'hq' ? 'active' : ''}`} onClick={() => showView('hq')}>HQ overview</button>
-          <button className={`nav-link ${view === 'buildings' ? 'active' : ''}`} onClick={() => showView('buildings')}>Buildings</button>
-          <button className={`nav-link ${view === 'units' ? 'active' : ''}`} onClick={() => showView('units')}>Units</button>
-          <button className={`nav-link ${view === 'tenants' ? 'active' : ''}`} onClick={() => showView('tenants')}>Tenants</button>
-          <button className={`nav-link ${view === 'contracts' ? 'active' : ''}`} onClick={() => showView('contracts')}>Contracts</button>
-          <button className={`nav-link ${view === 'invoices' ? 'active' : ''}`} onClick={() => showView('invoices')}>Invoices</button>
-          <button className={`nav-link ${view === 'payments' ? 'active' : ''}`} onClick={() => showView('payments')}>Payments</button>
+          {selectedBuildingID === 'hq' ? <>
+            <button className={`nav-link ${view === 'registration' ? 'active' : ''}`} onClick={() => showView('registration')}>Registration</button>
+            <button className={`nav-link ${view === 'reports' ? 'active' : ''}`} onClick={() => showView('reports')}>Reports</button>
+          </> : <>
+            <button className={`nav-link ${view === 'units' ? 'active' : ''}`} onClick={() => showView('units')}>Units</button>
+            <button className={`nav-link ${view === 'tenants' ? 'active' : ''}`} onClick={() => showView('tenants')}>Tenants</button>
+            <button className={`nav-link ${view === 'contracts' ? 'active' : ''}`} onClick={() => showView('contracts')}>Contracts</button>
+            <button className={`nav-link ${view === 'invoices' ? 'active' : ''}`} onClick={() => showView('invoices')}>Invoices</button>
+            <button className={`nav-link ${view === 'payments' ? 'active' : ''}`} onClick={() => showView('payments')}>Payments</button>
+          </>}
+          {selectedBuildingID === 'hq' && <button className={`nav-link ${view === 'buildings' ? 'active' : ''}`} onClick={() => showView('buildings')}>Buildings</button>}
           <button className={`nav-link ${view === 'settings' ? 'active' : ''}`} onClick={() => showView('settings')}>Settings</button>
         </nav>
         <button className="logout-button" type="button" onClick={() => void handleLogout()}>Sign out</button>
@@ -553,16 +605,34 @@ function App() {
         </header>
 
         {view === 'hq' && <>
-        <div className="stats-grid">
-          <div className="stat-card"><span>Buildings</span><strong>{stats.buildings}</strong></div>
-          <div className="stat-card"><span>Floors</span><strong>{stats.floors}</strong></div>
-          <div className="stat-card"><span>Units</span><strong>{stats.units}</strong></div>
-          <div className="stat-card"><span>Tenants</span><strong>{stats.tenants}</strong></div>
-          <div className="stat-card"><span>Contracts</span><strong>{stats.contracts}</strong></div>
-          <div className="stat-card"><span>Invoices</span><strong>{stats.invoices}</strong></div>
+        <div className="dashboard-heading"><div><p className="eyebrow">{selectedBuilding ? 'Branch operations' : 'Administration'}</p><h2>{selectedBuilding ? `OWNER UPDATES - ${selectedBuilding.code}` : 'OWNER UPDATES - ALL BUILDINGS'}</h2></div><span className="updated-date">Updated: {today.toLocaleDateString('en-GB')}</span></div>
+        <div className="stats-grid dashboard-stats">
+          <div className="stat-card"><span>Active contracts</span><strong>{activeContracts.length}</strong></div>
+          <div className="stat-card"><span>Expiring 7 days</span><strong>{expiring7.length}</strong></div>
+          <div className="stat-card"><span>Expiring 30 days</span><strong>{expiring30.length}</strong></div>
+          <div className="stat-card"><span>Expired in progress</span><strong>{expiredContracts.length}</strong></div>
+          <div className="stat-card"><span>Unpaid active</span><strong>{unpaidInvoices.length}</strong></div>
+          <div className="stat-card"><span>Payments today</span><strong>{paymentsToday.length}</strong></div>
         </div>
-        <div className="panel overview-panel"><h2>{selectedBuilding ? selectedBuilding.name : 'Portfolio status'}</h2><p>Use the building selector to review a property context, or choose a workspace from the sidebar to manage records.</p></div>
+        {!selectedBuilding && <div className="branch-grid">{branchCards.map((branch) => <button className="branch-card" key={branch.building.id} onClick={() => switchBuilding(String(branch.building.id))}><span>BRANCH: {branch.building.code}</span><strong>{branch.active} active</strong><small>{branch.expired} expired · {branch.unpaid} unpaid</small></button>)}</div>}
+        {selectedBuilding && <div className="dashboard-columns">
+          <div className="panel table-panel"><div className="section-heading"><h2>Contracts to expire</h2><span>Next 30 days</span></div>{expiring30.length === 0 ? <p className="empty-state">No contracts expiring in next 30 days.</p> : expiring30.map((contract) => <div className="dashboard-row" key={contract.id}><strong>{contract.tenant_id}</strong><span>{contract.unit_id}</span><span>{contract.end_date}</span><button className="row-action" onClick={() => showView('contracts')}>View / Pay</button></div>)}</div>
+          <div className="panel table-panel"><div className="section-heading"><h2>Expired contracts</h2><span>{expiredContracts.length} records</span></div>{expiredContracts.length === 0 ? <p className="empty-state">No expired contracts.</p> : expiredContracts.map((contract) => <div className="dashboard-row" key={contract.id}><strong>{contract.tenant_id}</strong><span>{contract.unit_id}</span><span>{contract.end_date}</span><button className="row-action" onClick={() => showView('contracts')}>View</button></div>)}</div>
+          <div className="panel table-panel"><div className="section-heading"><h2>Unpaid active contracts</h2><span>Balance due</span></div>{unpaidInvoices.length === 0 ? <p className="empty-state">No unpaid active contracts.</p> : unpaidInvoices.map((invoice) => <div className="dashboard-row" key={invoice.id}><strong>{invoice.number}</strong><span>{invoice.status}</span><span>${invoice.amount}</span><button className="row-action" onClick={() => showView('payments')}>Pay</button></div>)}</div>
+          <div className="panel table-panel"><div className="section-heading"><h2>Payments today</h2><span>Total: {paymentsToday.length}</span></div>{paymentsToday.length === 0 ? <p className="empty-state">No payments today.</p> : paymentsToday.map((payment) => <div className="dashboard-row" key={payment.id}><strong>{payment.payment_reference}</strong><span>{payment.payment_method}</span><span>${payment.amount}</span></div>)}</div>
+        </div>}
         </>}
+
+        {view === 'registration' && <div className="registration-layout">
+          <div className="registration-intro"><p className="eyebrow">Administration</p><h2>System registration</h2><p>Manage users, roles, and the shared catalogs used across every building.</p></div>
+          <div className="panel-grid">
+            <form className="panel form-panel" onSubmit={handleCreateUser}><h2>Register user</h2><label>Full name<input value={newUserForm.full_name} onChange={(event) => setNewUserForm((current) => ({ ...current, full_name: event.target.value }))} required /></label><label>Username<input value={newUserForm.username} onChange={(event) => setNewUserForm((current) => ({ ...current, username: event.target.value }))} required /></label><label>Email<input type="email" value={newUserForm.email} onChange={(event) => setNewUserForm((current) => ({ ...current, email: event.target.value }))} required /></label><label>Temporary password<input type="password" minLength={8} value={newUserForm.password} onChange={(event) => setNewUserForm((current) => ({ ...current, password: event.target.value }))} required /></label><button className="primary-button" type="submit">Register user</button></form>
+            <div className="panel list-panel"><h2>Users and access</h2><div className="building-list">{adminUsers.length === 0 ? <p className="empty-state">No users loaded. Confirm roles and user_roles exist in the database.</p> : adminUsers.map((user) => <article className="building-card" key={user.id}><div className="building-header"><div><h3>{user.full_name}</h3><span className="code-tag">{user.username}</span></div><select value={user.status} onChange={(event) => void updateUserStatus(user.id, event.target.value)}><option>Active</option><option>Inactive</option><option>Suspended</option></select></div><p>{user.email}</p><div className="meta-row"><span>{user.roles.length ? user.roles.join(', ') : 'No role assigned'}</span><select defaultValue="" onChange={(event) => { if (event.target.value) void assignUserRole(user.id, event.target.value) }}><option value="">Assign role</option>{roles.map((role) => <option key={role}>{role}</option>)}</select></div></article>)}</div></div>
+          </div>
+          <div className="catalog-grid"><div className="catalog-card"><span>Buildings</span><strong>{buildings.length}</strong><small>Register and manage properties</small></div><div className="catalog-card"><span>Payment methods</span><strong>6</strong><small>Cash, bank, mobile, card, cheque, other</small></div><div className="catalog-card"><span>Roles</span><strong>{roles.length}</strong><small>Administrator, Manager, Accountant, Staff</small></div></div>
+        </div>}
+
+        {view === 'reports' && <div className="reports-layout"><div className="registration-intro"><p className="eyebrow">Office reports</p><h2>All buildings combined</h2><p>Portfolio-wide statements for administration and owner review.</p></div><div className="reports-grid"><div className="report-card"><span>Transaction statement</span><strong>{payments.length}</strong><small>Recorded payments across all buildings</small></div><div className="report-card"><span>Expenses statement</span><strong>0</strong><small>Expenses will appear here when registered</small></div><div className="report-card"><span>Monthly rent statement</span><strong>{invoices.length}</strong><small>Generated invoices across the portfolio</small></div><div className="report-card"><span>Tenant statement</span><strong>{tenants.length}</strong><small>Tenants with active portfolio records</small></div></div><div className="panel table-panel"><div className="section-heading"><h2>Recent transactions</h2><span>All buildings</span></div>{payments.length === 0 ? <p className="empty-state">No transactions recorded.</p> : payments.slice(0, 12).map((payment) => <div className="dashboard-row" key={payment.id}><strong>{payment.payment_reference}</strong><span>{payment.payment_method}</span><span>${payment.amount}</span><span>{payment.payment_date}</span></div>)}</div></div>}
 
         {view === 'buildings' && <div className="panel-grid">
           <form className="panel form-panel" onSubmit={handleSubmit}>

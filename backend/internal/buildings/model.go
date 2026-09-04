@@ -59,6 +59,7 @@ type Tenant struct {
 
 type Contract struct {
 	ID                    uint64    `json:"id"`
+	BuildingID            uint64    `json:"building_id"`
 	UnitID                uint64    `json:"unit_id"`
 	TenantID              uint64    `json:"tenant_id"`
 	ContractType          string    `json:"contract_type"`

@@ -46,6 +46,7 @@ func TestServiceTracksPortfolioAndDashboardSummary(t *testing.T) {
 	}
 
 	contract, err := service.CreateContract(Contract{
+		BuildingID:   building.ID,
 		UnitID:       unit.ID,
 		TenantID:     tenant.ID,
 		ContractType: "Residential",

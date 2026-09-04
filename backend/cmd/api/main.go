@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Maswi01/mascoapartments/backend/internal/auth"
@@ -36,6 +37,11 @@ func main() {
 	mux.HandleFunc("GET /api/v1/auth/me", meHandler())
 	mux.HandleFunc("PUT /api/v1/auth/me", updateProfileHandler(authService))
 	mux.HandleFunc("POST /api/v1/auth/me/password", changePasswordHandler(authService))
+	mux.Handle("GET /api/v1/auth/users", adminOnly(usersHandler(authService)))
+	mux.Handle("POST /api/v1/auth/users", adminOnly(createUserHandler(authService)))
+	mux.Handle("GET /api/v1/auth/roles", adminOnly(rolesHandler(authService)))
+	mux.Handle("PATCH /api/v1/auth/users/{id}/status", adminOnly(updateUserStatusHandler(authService)))
+	mux.Handle("POST /api/v1/auth/users/{id}/roles", adminOnly(assignRoleHandler(authService)))
 	handler.RegisterRoutes(mux)
 
 	server := &http.Server{
@@ -88,6 +94,23 @@ func requireAuth(authService *auth.Service, next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), currentUserContextKey, currentUser)))
+	})
+}
+
+func adminOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		user, ok := currentUserFromRequest(request)
+		if !ok {
+			writeAuthError(writer, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		for _, role := range user.Roles {
+			if role == "Administrator" {
+				next.ServeHTTP(writer, request)
+				return
+			}
+		}
+		writeAuthError(writer, http.StatusForbidden, "administrator access required")
 	})
 }
 
@@ -154,6 +177,92 @@ func changePasswordHandler(authService *auth.Service) http.HandlerFunc {
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(writer).Encode(map[string]string{"status": "password updated"})
+	}
+}
+
+func usersHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		users, err := authService.ListUsers()
+		if err != nil {
+			writeAuthError(writer, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(writer).Encode(map[string]interface{}{"data": users})
+	}
+}
+
+func createUserHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		var input auth.UserInput
+		if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, "invalid user payload")
+			return
+		}
+		user, err := authService.CreateUser(input)
+		if err != nil {
+			writeAuthError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusCreated)
+		json.NewEncoder(writer).Encode(user)
+	}
+}
+
+func rolesHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		roles, err := authService.ListRoles()
+		if err != nil {
+			writeAuthError(writer, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(writer).Encode(map[string]interface{}{"data": roles})
+	}
+}
+
+func updateUserStatusHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		id, err := strconv.ParseUint(request.PathValue("id"), 10, 64)
+		if err != nil {
+			writeAuthError(writer, http.StatusBadRequest, "invalid user id")
+			return
+		}
+		var input struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, "invalid status payload")
+			return
+		}
+		if err := authService.UpdateUserStatus(id, input.Status); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func assignRoleHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		id, err := strconv.ParseUint(request.PathValue("id"), 10, 64)
+		if err != nil {
+			writeAuthError(writer, http.StatusBadRequest, "invalid user id")
+			return
+		}
+		var input struct {
+			Role string `json:"role"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, "invalid role payload")
+			return
+		}
+		if err := authService.AssignRole(id, input.Role); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
 	}
 }
 
