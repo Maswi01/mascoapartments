@@ -6,7 +6,7 @@ import './App.css'
 const apiURL = import.meta.env.VITE_API_URL ?? 'http://localhost:6400/api/v1'
 
 const defaultForm = {
-  name: '',
+  full_name: '',
   code: '',
   address: '',
   description: '',
@@ -63,7 +63,7 @@ const defaultPaymentForm = {
 
 type BuildingRecord = {
   id: string
-  name: string
+  full_name: string
   code: string
   address: string
   description?: string
@@ -73,6 +73,7 @@ type BuildingRecord = {
 
 type TenantRecord = {
   id: string
+  building_id: string
   type: string
   full_name?: string
   company_name?: string
@@ -349,7 +350,7 @@ function App() {
     const response = await apiFetch('/tenants', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(tenantForm),
+      body: JSON.stringify({ ...tenantForm, building_id: Number(selectedBuildingID) }),
     })
 
     if (response.ok) {
@@ -603,7 +604,7 @@ function App() {
           <label className="building-switcher">Portfolio context
             <select value={selectedBuildingID} onChange={(event) => switchBuilding(event.target.value)}>
               <option value="hq">HQ - all buildings</option>
-              {buildings.map((building) => <option key={building.id} value={building.id}>{building.name}</option>)}
+              {buildings.map((building) => <option key={building.id} value={building.id}>{building.full_name}</option>)}
             </select>
           </label>
         </header>
@@ -622,7 +623,7 @@ function App() {
         <div className="branch-grid">{branchCards.map((branch) => <button className="branch-card" key={branch.building.id} onClick={() => switchBuilding(String(branch.building.id))}><span>BRANCH: {branch.building.code}</span><strong>{branch.active} active</strong><small>{branch.expiring30} expiring in 30d · {branch.expired} expired · {branch.unpaid} unpaid</small></button>)}</div>
         </div>}
         {view === 'home' && selectedBuilding && <div className="branch-dashboard">
-        <div className="dashboard-heading"><div><p className="eyebrow">Branch dashboard · {selectedBuilding.code}</p><h2>OWNER UPDATES - {selectedBuilding.name}</h2></div><span className="updated-date">Updated: {today.toLocaleDateString('en-GB')}</span></div>
+        <div className="dashboard-heading"><div><p className="eyebrow">Branch dashboard · {selectedBuilding.code}</p><h2>OWNER UPDATES - {selectedBuilding.full_name}</h2></div><span className="updated-date">Updated: {today.toLocaleDateString('en-GB')}</span></div>
         <div className="stats-grid dashboard-stats">
           <div className="stat-card"><span>Active contracts</span><strong>{activeContracts.length}</strong></div>
           <div className="stat-card"><span>Expiring 7 days</span><strong>{expiring7.length}</strong></div>
@@ -654,8 +655,8 @@ function App() {
           <form className="panel form-panel" onSubmit={handleSubmit}>
             <h2>Add building</h2>
             <label>
-              Building name
-              <input name="name" value={form.name} onChange={handleChange} placeholder="Mlimani Apartments" />
+              Building full name
+              <input name="full_name" value={form.full_name} onChange={handleChange} placeholder="Mlimani Apartments" />
             </label>
             <label>
               Building code
@@ -697,7 +698,7 @@ function App() {
                   <article className="building-card" key={building.id}>
                     <div className="building-header">
                       <div>
-                        <h3>{building.name}</h3>
+                        <h3>{building.full_name}</h3>
                         <span className="code-tag">{building.code}</span>
                       </div>
                       <span className="status-badge">{building.status}</span>
@@ -718,7 +719,7 @@ function App() {
         {view === 'units' && <div className="panel-grid">
           <form className="panel form-panel" onSubmit={handleUnitSubmit}>
             <h2>Add unit</h2>
-            <p className="empty-state">{selectedBuilding ? `Adding to ${selectedBuilding.name}` : 'Select a building above before adding a unit.'}</p>
+            <p className="empty-state">{selectedBuilding ? `Adding to ${selectedBuilding.full_name}` : 'Select a building above before adding a unit.'}</p>
             <label>Unit number<input name="number" value={unitForm.number} onChange={handleUnitChange} placeholder="A1 or Shop 4" required /></label>
             <div className="inline-fields"><label>Unit type<select name="type" value={unitForm.type} onChange={handleUnitChange}><option>Residential</option><option>Commercial</option><option>Service</option></select></label><label>Status<select name="status" value={unitForm.status} onChange={handleUnitChange}><option>Vacant</option><option>Occupied</option><option>Maintenance</option><option>Reserved</option></select></label></div>
             <label>Description<textarea name="description" value={unitForm.description} onChange={handleUnitChange} placeholder="Apartment, shop, office, or service area" /></label>
@@ -726,7 +727,7 @@ function App() {
             <label>Approximate size<input name="size" value={unitForm.size} onChange={handleUnitChange} placeholder="75 sqm" /></label>
             <button className="primary-button" type="submit">Save unit</button>
           </form>
-          <div className="panel list-panel"><h2>{selectedBuilding ? `${selectedBuilding.name} units` : 'Units'}</h2><div className="building-list">{selectedBuildingID === 'hq' ? <p className="empty-state">Choose a building to see its units.</p> : units.length === 0 ? <p className="empty-state">No units registered for this building.</p> : units.map((unit) => <article className="building-card" key={unit.id}><div className="building-header"><div><h3>{unit.number}</h3><span className="code-tag">{unit.type}</span></div><span className="status-badge">{unit.status}</span></div><div className="meta-row"><span>{unit.bedrooms} bedrooms, {unit.bathrooms} bathrooms</span><span>{unit.size || 'Size not set'}</span></div></article>)}</div></div>
+          <div className="panel list-panel"><h2>{selectedBuilding ? `${selectedBuilding.full_name} units` : 'Units'}</h2><div className="building-list">{selectedBuildingID === 'hq' ? <p className="empty-state">Choose a building to see its units.</p> : units.length === 0 ? <p className="empty-state">No units registered for this building.</p> : units.map((unit) => <article className="building-card" key={unit.id}><div className="building-header"><div><h3>{unit.number}</h3><span className="code-tag">{unit.type}</span></div><span className="status-badge">{unit.status}</span></div><div className="meta-row"><span>{unit.bedrooms} bedrooms, {unit.bathrooms} bathrooms</span><span>{unit.size || 'Size not set'}</span></div></article>)}</div></div>
         </div>}
 
         {view === 'tenants' && <div className="panel-grid">

@@ -5,7 +5,7 @@ import "time"
 // Building is the top-level property record for a physical property.
 type Building struct {
 	ID          uint64    `json:"id"`
-	Name        string    `json:"name"`
+	FullName    string    `json:"full_name"`
 	Code        string    `json:"code"`
 	Address     string    `json:"address"`
 	Description string    `json:"description,omitempty"`
@@ -43,6 +43,7 @@ type Unit struct {
 
 type Tenant struct {
 	ID              uint64    `json:"id"`
+	BuildingID      uint64    `json:"building_id"`
 	Type            string    `json:"type"`
 	FullName        string    `json:"full_name,omitempty"`
 	CompanyName     string    `json:"company_name,omitempty"`

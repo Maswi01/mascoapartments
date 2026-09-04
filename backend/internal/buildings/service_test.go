@@ -6,11 +6,11 @@ func TestServiceTracksPortfolioAndDashboardSummary(t *testing.T) {
 	service := NewService()
 
 	building, err := service.CreateBuilding(Building{
-		Name:    "Mlimani Apartments",
-		Code:    "MLM-01",
-		Address: "Dar es Salaam",
-		Floors:  2,
-		Status:  "Active",
+		FullName: "Mlimani Apartments",
+		Code:     "MLM-01",
+		Address:  "Dar es Salaam",
+		Floors:   2,
+		Status:   "Active",
 	})
 	if err != nil {
 		t.Fatalf("create building: %v", err)

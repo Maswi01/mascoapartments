@@ -17,12 +17,12 @@ func NewMySQLService(db *sql.DB) *MySQLService {
 }
 
 func (s *MySQLService) CreateBuilding(building Building) (*Building, error) {
-	if building.Name == "" || building.Code == "" || building.Address == "" {
-		return nil, errors.New("building name, code, and address are required")
+	if building.FullName == "" || building.Code == "" || building.Address == "" {
+		return nil, errors.New("building full name, code, and address are required")
 	}
 	building.CreatedAt = time.Now()
 	building.UpdatedAt = building.CreatedAt
-	result, err := s.db.Exec(`INSERT INTO buildings (name, code, address, description, number_of_floors, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, building.Name, building.Code, building.Address, building.Description, building.Floors, building.Status, building.CreatedAt, building.UpdatedAt)
+	result, err := s.db.Exec(`INSERT INTO buildings (full_name, code, address, description, number_of_floors, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, building.FullName, building.Code, building.Address, building.Description, building.Floors, building.Status, building.CreatedAt, building.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("save building: %w", err)
 	}
@@ -42,7 +42,7 @@ func databaseID(result sql.Result) (uint64, error) {
 }
 
 func (s *MySQLService) ListBuildings() []*Building {
-	rows, err := s.db.Query(`SELECT id, name, code, address, COALESCE(description, ''), number_of_floors, status, created_at, updated_at FROM buildings ORDER BY created_at DESC`)
+	rows, err := s.db.Query(`SELECT id, full_name, code, address, COALESCE(description, ''), number_of_floors, status, created_at, updated_at FROM buildings ORDER BY created_at DESC`)
 	if err != nil {
 		return []*Building{}
 	}
@@ -50,7 +50,7 @@ func (s *MySQLService) ListBuildings() []*Building {
 	items := make([]*Building, 0)
 	for rows.Next() {
 		item := &Building{}
-		if rows.Scan(&item.ID, &item.Name, &item.Code, &item.Address, &item.Description, &item.Floors, &item.Status, &item.CreatedAt, &item.UpdatedAt) == nil {
+		if rows.Scan(&item.ID, &item.FullName, &item.Code, &item.Address, &item.Description, &item.Floors, &item.Status, &item.CreatedAt, &item.UpdatedAt) == nil {
 			items = append(items, item)
 		}
 	}
@@ -136,12 +136,12 @@ func (s *MySQLService) GetUnit(id uint64) (*Unit, error) {
 }
 
 func (s *MySQLService) CreateTenant(tenant Tenant) (*Tenant, error) {
-	if tenant.Type == "" || (tenant.FullName == "" && tenant.CompanyName == "") {
-		return nil, errors.New("tenant type and name are required")
+	if tenant.BuildingID == 0 || tenant.Type == "" || (tenant.FullName == "" && tenant.CompanyName == "") {
+		return nil, errors.New("building, tenant type, and name are required")
 	}
 	tenant.CreatedAt = time.Now()
 	tenant.UpdatedAt = tenant.CreatedAt
-	result, err := s.db.Exec(`INSERT INTO tenants (tenant_type, full_name, company_name, contact_person, phone, email, address, id_number, registration_reference, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, tenant.Type, tenant.FullName, tenant.CompanyName, tenant.ContactPerson, tenant.Phone, tenant.Email, tenant.Address, tenant.IDNumber, tenant.RegistrationRef, tenant.Notes, tenant.CreatedAt, tenant.UpdatedAt)
+	result, err := s.db.Exec(`INSERT INTO tenants (building_id, tenant_type, full_name, company_name, contact_person, phone, email, address, id_number, registration_reference, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, tenant.BuildingID, tenant.Type, tenant.FullName, tenant.CompanyName, tenant.ContactPerson, tenant.Phone, tenant.Email, tenant.Address, tenant.IDNumber, tenant.RegistrationRef, tenant.Notes, tenant.CreatedAt, tenant.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("save tenant: %w", err)
 	}
@@ -153,10 +153,10 @@ func (s *MySQLService) CreateTenant(tenant Tenant) (*Tenant, error) {
 }
 
 func (s *MySQLService) ListTenants(buildingID uint64) []*Tenant {
-	query := `SELECT DISTINCT t.id, t.tenant_type, t.full_name, t.company_name, t.contact_person, t.phone, t.email, t.address, t.id_number, t.registration_reference, t.notes, t.created_at, t.updated_at FROM tenants t LEFT JOIN contracts c ON c.tenant_id = t.id LEFT JOIN units u ON u.id = c.unit_id`
+	query := `SELECT t.id, t.building_id, t.tenant_type, t.full_name, t.company_name, t.contact_person, t.phone, t.email, t.address, t.id_number, t.registration_reference, t.notes, t.created_at, t.updated_at FROM tenants t`
 	args := []interface{}{}
 	if buildingID != 0 {
-		query += ` WHERE u.building_id = ?`
+		query += ` WHERE t.building_id = ?`
 		args = append(args, buildingID)
 	}
 	query += ` ORDER BY t.created_at DESC`
@@ -168,7 +168,7 @@ func (s *MySQLService) ListTenants(buildingID uint64) []*Tenant {
 	items := make([]*Tenant, 0)
 	for rows.Next() {
 		item := &Tenant{}
-		if rows.Scan(&item.ID, &item.Type, &item.FullName, &item.CompanyName, &item.ContactPerson, &item.Phone, &item.Email, &item.Address, &item.IDNumber, &item.RegistrationRef, &item.Notes, &item.CreatedAt, &item.UpdatedAt) == nil {
+		if rows.Scan(&item.ID, &item.BuildingID, &item.Type, &item.FullName, &item.CompanyName, &item.ContactPerson, &item.Phone, &item.Email, &item.Address, &item.IDNumber, &item.RegistrationRef, &item.Notes, &item.CreatedAt, &item.UpdatedAt) == nil {
 			items = append(items, item)
 		}
 	}
@@ -177,7 +177,7 @@ func (s *MySQLService) ListTenants(buildingID uint64) []*Tenant {
 
 func (s *MySQLService) GetTenant(id uint64) (*Tenant, error) {
 	tenant := &Tenant{}
-	err := s.db.QueryRow(`SELECT id, tenant_type, full_name, company_name, contact_person, phone, email, address, id_number, registration_reference, notes, created_at, updated_at FROM tenants WHERE id = ?`, id).Scan(&tenant.ID, &tenant.Type, &tenant.FullName, &tenant.CompanyName, &tenant.ContactPerson, &tenant.Phone, &tenant.Email, &tenant.Address, &tenant.IDNumber, &tenant.RegistrationRef, &tenant.Notes, &tenant.CreatedAt, &tenant.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, building_id, tenant_type, full_name, company_name, contact_person, phone, email, address, id_number, registration_reference, notes, created_at, updated_at FROM tenants WHERE id = ?`, id).Scan(&tenant.ID, &tenant.BuildingID, &tenant.Type, &tenant.FullName, &tenant.CompanyName, &tenant.ContactPerson, &tenant.Phone, &tenant.Email, &tenant.Address, &tenant.IDNumber, &tenant.RegistrationRef, &tenant.Notes, &tenant.CreatedAt, &tenant.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTenantNotFound
 	}

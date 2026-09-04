@@ -38,8 +38,8 @@ func (s *Service) CreateBuilding(b Building) (*Building, error) {
 	if b.ID == 0 {
 		b.ID = uint64(len(s.buildings) + 1)
 	}
-	if b.Name == "" {
-		return nil, errors.New("building name is required")
+	if b.FullName == "" {
+		return nil, errors.New("building full name is required")
 	}
 	if b.Code == "" {
 		return nil, errors.New("building code is required")
@@ -144,7 +144,7 @@ func (s *Service) CreateTenant(t Tenant) (*Tenant, error) {
 func (s *Service) ListTenants(buildingID uint64) []*Tenant {
 	items := make([]*Tenant, 0, len(s.tenants))
 	for _, tenant := range s.tenants {
-		if buildingID != 0 && !s.tenantInBuilding(tenant.ID, buildingID) {
+		if buildingID != 0 && tenant.BuildingID != buildingID {
 			continue
 		}
 		items = append(items, tenant)
@@ -294,7 +294,7 @@ func (s *Service) DashboardSummary(buildingID uint64) DashboardSummary {
 		}
 	}
 	for _, tenant := range s.tenants {
-		if s.tenantInBuilding(tenant.ID, buildingID) {
+		if tenant.BuildingID == buildingID {
 			summary.Tenants++
 		}
 	}
@@ -309,15 +309,4 @@ func (s *Service) DashboardSummary(buildingID uint64) DashboardSummary {
 		}
 	}
 	return summary
-}
-
-func (s *Service) tenantInBuilding(tenantID uint64, buildingID uint64) bool {
-	for _, contract := range s.contracts {
-		if contract.TenantID == tenantID {
-			if unit, ok := s.units[contract.UnitID]; ok && unit.BuildingID == buildingID {
-				return true
-			}
-		}
-	}
-	return false
 }
