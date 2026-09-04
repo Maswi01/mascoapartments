@@ -37,12 +37,11 @@ const defaultTenantForm = {
 
 const defaultUnitForm = {
   number: '',
+  floor_id: '',
   type: 'Residential',
   description: '',
-  bedrooms: '0',
-  bathrooms: '0',
-  size: '',
   status: 'Vacant',
+  base_rent: '',
 }
 
 const defaultContractForm = {
@@ -95,11 +94,12 @@ type UnitRecord = {
   building_id: string
   number: string
   type: string
-  bedrooms: number
-  bathrooms: number
-  size?: string
   status: string
+  floor_id?: string
+  base_rent: number
 }
+
+type FloorRecord = { id: string; name: string }
 
 type ContractRecord = {
   id: string
@@ -157,6 +157,7 @@ function App() {
   const [buildings, setBuildings] = useState<BuildingRecord[]>([])
   const [tenants, setTenants] = useState<TenantRecord[]>([])
   const [units, setUnits] = useState<UnitRecord[]>([])
+  const [floors, setFloors] = useState<FloorRecord[]>([])
   const [contracts, setContracts] = useState<ContractRecord[]>([])
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([])
   const [payments, setPayments] = useState<PaymentRecord[]>([])
@@ -254,12 +255,15 @@ function App() {
     localStorage.setItem('masco-building-id', selectedBuildingID)
     if (!session || selectedBuildingID === 'hq') {
       setUnits([])
+      setFloors([])
       return
     }
-    void apiFetch(`/buildings/${selectedBuildingID}/units`).then(async (response) => {
-      if (!response.ok) throw new Error('Could not load units')
-      return response.json()
-    }).then((payload) => setUnits(payload.data ?? [])).catch(() => setUnits([]))
+    void Promise.all([apiFetch(`/buildings/${selectedBuildingID}/units`), apiFetch(`/buildings/${selectedBuildingID}/floors`)]).then(async ([unitsResponse, floorsResponse]) => {
+      if (!unitsResponse.ok || !floorsResponse.ok) throw new Error('Could not load building data')
+      const [unitsPayload, floorsPayload] = await Promise.all([unitsResponse.json(), floorsResponse.json()])
+      setUnits(unitsPayload.data ?? [])
+      setFloors(floorsPayload.data ?? [])
+    }).catch(() => { setUnits([]); setFloors([]) })
   }, [selectedBuildingID, session])
 
   useEffect(() => {
@@ -310,7 +314,7 @@ function App() {
       await Swal.fire({ icon: 'info', title: 'Choose a building first', text: 'Select the building this unit belongs to from the portfolio context selector.', confirmButtonColor: '#133d32' })
       return
     }
-    const response = await apiFetch(`/buildings/${selectedBuildingID}/units`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...unitForm, bedrooms: Number(unitForm.bedrooms), bathrooms: Number(unitForm.bathrooms) }) })
+    const response = await apiFetch(`/buildings/${selectedBuildingID}/units`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...unitForm, floor_id: Number(unitForm.floor_id) || 0, base_rent: amountNumber(unitForm.base_rent) }) })
     if (!response.ok) {
       await showRequestError(response, 'Could not save unit.')
       return
@@ -733,13 +737,12 @@ function App() {
             <h2>Add unit</h2>
             <p className="empty-state">{selectedBuilding ? `Adding to ${selectedBuilding.name}` : 'Select a building above before adding a unit.'}</p>
             <label>Unit number<input name="number" value={unitForm.number} onChange={handleUnitChange} placeholder="A1 or Shop 4" required /></label>
-            <div className="inline-fields"><label>Unit type<select name="type" value={unitForm.type} onChange={handleUnitChange}><option>Residential</option><option>Commercial</option><option>Service</option></select></label><label>Status<select name="status" value={unitForm.status} onChange={handleUnitChange}><option>Vacant</option><option>Occupied</option><option>Maintenance</option><option>Reserved</option></select></label></div>
+            <div className="inline-fields"><label>Floor<select name="floor_id" value={unitForm.floor_id} onChange={handleUnitChange}><option value="">No floor assigned</option>{floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}</select></label><label>Unit type<select name="type" value={unitForm.type} onChange={handleUnitChange}><option>Residential</option><option>Commercial</option><option>Service</option></select></label></div>
             <label>Description<textarea name="description" value={unitForm.description} onChange={handleUnitChange} placeholder="Apartment, shop, office, or service area" /></label>
-            <div className="inline-fields"><label>Bedrooms<input type="number" min="0" name="bedrooms" value={unitForm.bedrooms} onChange={handleUnitChange} /></label><label>Bathrooms<input type="number" min="0" name="bathrooms" value={unitForm.bathrooms} onChange={handleUnitChange} /></label></div>
-            <label>Approximate size<input name="size" value={unitForm.size} onChange={handleUnitChange} placeholder="75 sqm" /></label>
+            <label>Required rent<input inputMode="decimal" name="base_rent" value={unitForm.base_rent} onChange={(event) => setUnitForm((current) => ({ ...current, base_rent: formatAmount(event.target.value) }))} placeholder="300,000" /></label>
             <button className="primary-button" type="submit">Save unit</button>
           </form>
-          <div className="panel list-panel"><h2>{selectedBuilding ? `${selectedBuilding.name} units` : 'Units'}</h2><div className="building-list">{selectedBuildingID === 'hq' ? <p className="empty-state">Choose a building to see its units.</p> : units.length === 0 ? <p className="empty-state">No units registered for this building.</p> : units.map((unit) => <article className="building-card" key={unit.id}><div className="building-header"><div><h3>{unit.number}</h3><span className="code-tag">{unit.type}</span></div><span className="status-badge">{unit.status}</span></div><div className="meta-row"><span>{unit.bedrooms} bedrooms, {unit.bathrooms} bathrooms</span><span>{unit.size || 'Size not set'}</span></div></article>)}</div></div>
+          <div className="panel list-panel"><h2>{selectedBuilding ? `${selectedBuilding.name} units` : 'Units'}</h2><div className="building-list">{selectedBuildingID === 'hq' ? <p className="empty-state">Choose a building to see its units.</p> : units.length === 0 ? <p className="empty-state">No units registered for this building.</p> : units.map((unit) => <article className="building-card" key={unit.id}><div className="building-header"><div><h3>{unit.number}</h3><span className="code-tag">{unit.type}</span></div><span className="status-badge">{unit.status}</span></div><div className="meta-row"><span>Rent: {formatAmount(unit.base_rent)}</span></div></article>)}</div></div>
         </div>}
 
         {view === 'tenants' && <div className="panel-grid">

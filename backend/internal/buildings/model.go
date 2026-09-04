@@ -33,9 +33,7 @@ type Unit struct {
 	Number      string    `json:"number"`
 	Type        string    `json:"type"`
 	Description string    `json:"description,omitempty"`
-	Bedrooms    int       `json:"bedrooms,omitempty"`
-	Bathrooms   int       `json:"bathrooms,omitempty"`
-	Size        string    `json:"size,omitempty"`
+	BaseRent    float64   `json:"base_rent"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`

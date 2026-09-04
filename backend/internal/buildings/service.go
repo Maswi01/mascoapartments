@@ -109,6 +109,7 @@ func (s *Service) CreateUnit(u Unit) (*Unit, error) {
 		return nil, errors.New("unit type is required")
 	}
 
+	u.Status = "Vacant"
 	s.units[u.ID] = &u
 	return s.units[u.ID], nil
 }
@@ -180,6 +181,9 @@ func (s *Service) CreateContract(c Contract) (*Contract, error) {
 	}
 
 	s.contracts[c.ID] = &c
+	if unit, ok := s.units[c.UnitID]; ok {
+		unit.Status = "Occupied"
+	}
 	return s.contracts[c.ID], nil
 }
 
