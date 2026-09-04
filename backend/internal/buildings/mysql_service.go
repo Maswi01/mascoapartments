@@ -17,12 +17,12 @@ func NewMySQLService(db *sql.DB) *MySQLService {
 }
 
 func (s *MySQLService) CreateBuilding(building Building) (*Building, error) {
-	if building.FullName == "" || building.Code == "" || building.Address == "" {
-		return nil, errors.New("building full name, code, and address are required")
+	if building.Name == "" || building.Code == "" || building.Address == "" {
+		return nil, errors.New("building name, code, and address are required")
 	}
 	building.CreatedAt = time.Now()
 	building.UpdatedAt = building.CreatedAt
-	result, err := s.db.Exec(`INSERT INTO buildings (full_name, code, address, description, number_of_floors, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, building.FullName, building.Code, building.Address, building.Description, building.Floors, building.Status, building.CreatedAt, building.UpdatedAt)
+	result, err := s.db.Exec(`INSERT INTO buildings (name, code, address, description, number_of_floors, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, building.Name, building.Code, building.Address, building.Description, building.Floors, building.Status, building.CreatedAt, building.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("save building: %w", err)
 	}
@@ -42,7 +42,7 @@ func databaseID(result sql.Result) (uint64, error) {
 }
 
 func (s *MySQLService) ListBuildings() []*Building {
-	rows, err := s.db.Query(`SELECT id, full_name, code, address, COALESCE(description, ''), number_of_floors, status, created_at, updated_at FROM buildings ORDER BY created_at DESC`)
+	rows, err := s.db.Query(`SELECT id, name, code, address, COALESCE(description, ''), number_of_floors, status, created_at, updated_at FROM buildings ORDER BY created_at DESC`)
 	if err != nil {
 		return []*Building{}
 	}
@@ -50,7 +50,7 @@ func (s *MySQLService) ListBuildings() []*Building {
 	items := make([]*Building, 0)
 	for rows.Next() {
 		item := &Building{}
-		if rows.Scan(&item.ID, &item.FullName, &item.Code, &item.Address, &item.Description, &item.Floors, &item.Status, &item.CreatedAt, &item.UpdatedAt) == nil {
+		if rows.Scan(&item.ID, &item.Name, &item.Code, &item.Address, &item.Description, &item.Floors, &item.Status, &item.CreatedAt, &item.UpdatedAt) == nil {
 			items = append(items, item)
 		}
 	}

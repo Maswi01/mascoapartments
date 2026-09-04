@@ -38,8 +38,8 @@ func (s *Service) CreateBuilding(b Building) (*Building, error) {
 	if b.ID == 0 {
 		b.ID = uint64(len(s.buildings) + 1)
 	}
-	if b.FullName == "" {
-		return nil, errors.New("building full name is required")
+	if b.Name == "" {
+		return nil, errors.New("building name is required")
 	}
 	if b.Code == "" {
 		return nil, errors.New("building code is required")
