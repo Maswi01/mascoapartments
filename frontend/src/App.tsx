@@ -526,7 +526,7 @@ function App() {
     )
   }
 
-  const selectedBuilding = buildings.find((building) => building.id === selectedBuildingID)
+  const selectedBuilding = buildings.find((building) => String(building.id) === selectedBuildingID)
   const pageTitle: Record<View, string> = {
     home: selectedBuildingID === 'hq' ? 'Home' : 'Branch home',
     buildings: 'Buildings',
@@ -604,8 +604,8 @@ function App() {
           </label>
         </header>
 
-        {view === 'home' && <>
-        <div className="dashboard-heading"><div><p className="eyebrow">{selectedBuilding ? 'Branch dashboard' : 'HQ / Administration'}</p><h2>{selectedBuilding ? `OWNER UPDATES - ${selectedBuilding.code}` : 'ADMINISTRATION OWNER UPDATES - ALL BUILDINGS'}</h2></div><span className="updated-date">Updated: {today.toLocaleDateString('en-GB')}</span></div>
+        {view === 'home' && !selectedBuilding && <div className="hq-dashboard">
+        <div className="dashboard-heading"><div><p className="eyebrow">HQ / Administration</p><h2>ADMINISTRATION OWNER UPDATES - ALL BUILDINGS</h2></div><span className="updated-date">Updated: {today.toLocaleDateString('en-GB')}</span></div>
         <div className="stats-grid dashboard-stats">
           <div className="stat-card"><span>Active contracts</span><strong>{activeContracts.length}</strong></div>
           <div className="stat-card"><span>Expiring 7 days</span><strong>{expiring7.length}</strong></div>
@@ -614,14 +614,26 @@ function App() {
           <div className="stat-card"><span>Unpaid active</span><strong>{unpaidInvoices.length}</strong></div>
           <div className="stat-card"><span>Payments today</span><strong>{paymentsToday.length}</strong></div>
         </div>
-        {!selectedBuilding && <><p className="dashboard-mode-note">All buildings combined. Choose a branch above to open its isolated workspace.</p><div className="branch-grid">{branchCards.map((branch) => <button className="branch-card" key={branch.building.id} onClick={() => switchBuilding(String(branch.building.id))}><span>BRANCH: {branch.building.code}</span><strong>{branch.active} active</strong><small>{branch.expired} expired · {branch.unpaid} unpaid</small></button>)}</div></>}
-        {selectedBuilding && <div className="dashboard-columns">
+        <div className="hq-section-heading"><div><p className="eyebrow">Portfolio directory</p><h2>Branches at a glance</h2></div><span>Choose a branch to enter its workspace</span></div>
+        <div className="branch-grid">{branchCards.map((branch) => <button className="branch-card" key={branch.building.id} onClick={() => switchBuilding(String(branch.building.id))}><span>BRANCH: {branch.building.code}</span><strong>{branch.active} active</strong><small>{branch.expiring30} expiring in 30d · {branch.expired} expired · {branch.unpaid} unpaid</small></button>)}</div>
+        </div>}
+        {view === 'home' && selectedBuilding && <div className="branch-dashboard">
+        <div className="dashboard-heading"><div><p className="eyebrow">Branch dashboard</p><h2>OWNER UPDATES - {selectedBuilding.code}</h2></div><span className="updated-date">Updated: {today.toLocaleDateString('en-GB')}</span></div>
+        <div className="stats-grid dashboard-stats">
+          <div className="stat-card"><span>Active contracts</span><strong>{activeContracts.length}</strong></div>
+          <div className="stat-card"><span>Expiring 7 days</span><strong>{expiring7.length}</strong></div>
+          <div className="stat-card"><span>Expiring 30 days</span><strong>{expiring30.length}</strong></div>
+          <div className="stat-card"><span>Expired in progress</span><strong>{expiredContracts.length}</strong></div>
+          <div className="stat-card"><span>Unpaid active</span><strong>{unpaidInvoices.length}</strong></div>
+          <div className="stat-card"><span>Payments today</span><strong>{paymentsToday.length}</strong></div>
+        </div>
+        <div className="dashboard-columns">
           <div className="panel table-panel"><div className="section-heading"><h2>Contracts to expire</h2><span>Next 30 days</span></div>{expiring30.length === 0 ? <p className="empty-state">No contracts expiring in next 30 days.</p> : expiring30.map((contract) => <div className="dashboard-row" key={contract.id}><strong>{contract.tenant_id}</strong><span>{contract.unit_id}</span><span>{contract.end_date}</span><button className="row-action" onClick={() => showView('contracts')}>View / Pay</button></div>)}</div>
           <div className="panel table-panel"><div className="section-heading"><h2>Expired contracts</h2><span>{expiredContracts.length} records</span></div>{expiredContracts.length === 0 ? <p className="empty-state">No expired contracts.</p> : expiredContracts.map((contract) => <div className="dashboard-row" key={contract.id}><strong>{contract.tenant_id}</strong><span>{contract.unit_id}</span><span>{contract.end_date}</span><button className="row-action" onClick={() => showView('contracts')}>View</button></div>)}</div>
           <div className="panel table-panel"><div className="section-heading"><h2>Unpaid active contracts</h2><span>Balance due</span></div>{unpaidInvoices.length === 0 ? <p className="empty-state">No unpaid active contracts.</p> : unpaidInvoices.map((invoice) => <div className="dashboard-row" key={invoice.id}><strong>{invoice.number}</strong><span>{invoice.status}</span><span>${invoice.amount}</span><button className="row-action" onClick={() => showView('payments')}>Pay</button></div>)}</div>
           <div className="panel table-panel"><div className="section-heading"><h2>Payments today</h2><span>Total: {paymentsToday.length}</span></div>{paymentsToday.length === 0 ? <p className="empty-state">No payments today.</p> : paymentsToday.map((payment) => <div className="dashboard-row" key={payment.id}><strong>{payment.payment_reference}</strong><span>{payment.payment_method}</span><span>${payment.amount}</span></div>)}</div>
+        </div>
         </div>}
-        </>}
 
         {view === 'registration' && <div className="registration-layout">
           <div className="registration-intro"><p className="eyebrow">Administration</p><h2>System registration</h2><p>Manage users, roles, and the shared catalogs used across every building.</p></div>
