@@ -377,6 +377,16 @@ function App() {
   }, [selectedBuildingID, session]);
 
   useEffect(() => {
+    const match = window.location.pathname.match(/^\/units\/(\d+)\/rent$/);
+    if (!match || units.length === 0) return;
+    const unit = units.find((item) => String(item.id) === match[1]);
+    if (unit) {
+      setRentUnitID(unit.id);
+      setContractForm((current) => ({ ...current, unit_id: unit.id, contract_type: unit.type, monthly_rent: formatAmount(unit.base_rent) }));
+    }
+  }, [units]);
+
+  useEffect(() => {
     if (view !== "registration" || !session) return;
     void Promise.all([apiFetch("/auth/users"), apiFetch("/auth/roles")])
       .then(async ([usersResponse, rolesResponse]) => {
@@ -1810,10 +1820,9 @@ function App() {
                 <p className="empty-state">{selectedBuilding?.name} · Unit {units.find((unit) => unit.id === rentUnitID)?.number}</p>
                 <label>Tenant<select name="tenant_id" value={contractForm.tenant_id} onChange={handleContractChange} required><option value="">Select tenant</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.full_name || tenant.company_name}</option>)}</select></label>
                 <div className="inline-fields"><label>Start date<input type="date" name="start_date" value={contractForm.start_date} onChange={handleContractChange} required /></label><label>Period (months)<input type="number" min="1" name="period" value={contractForm.period} onChange={handleContractChange} required /></label></div>
-                <div className="inline-fields"><label>End date<input type="date" value={calculatedEndDate} readOnly /></label><label>Total amount<input value={formatAmount(totalRent)} readOnly /></label></div>
-                <label>Required monthly rent<input inputMode="decimal" value={contractForm.monthly_rent} readOnly /></label>
-                <div className="inline-fields"><label>Total amount<input inputMode="decimal" value={formatAmount(totalRent)} readOnly /></label><label>Balance<input inputMode="decimal" value={formatAmount(balanceAmount)} readOnly /></label></div>
-                <label>Prepaid amount<input inputMode="decimal" name="prepaid_amount" value={contractForm.prepaid_amount} onChange={(event) => setContractForm((current) => ({ ...current, prepaid_amount: formatAmount(event.target.value) }))} /><small className="field-help">Amount paid now. Enter 0 when no payment is received.</small></label>
+                <div className="inline-fields"><label>End date<input type="date" value={calculatedEndDate} readOnly /></label><label>Required monthly rent<input inputMode="decimal" value={contractForm.monthly_rent} readOnly /></label></div>
+                <div className="inline-fields"><label>Prepaid amount<input inputMode="decimal" name="prepaid_amount" value={contractForm.prepaid_amount} onChange={(event) => setContractForm((current) => ({ ...current, prepaid_amount: formatAmount(event.target.value) }))} /><small className="field-help">Amount paid now. Enter 0 when no payment is received.</small></label><label>Total amount<input value={formatAmount(totalRent)} readOnly /></label></div>
+                <label>Balance<input value={formatAmount(balanceAmount)} readOnly /></label>
                 <div className="inline-fields"><label>Payment method<select name="payment_method" value={contractForm.payment_method} onChange={handleContractChange}><option>Bank Transfer</option><option>Cash</option><option>Mobile Money</option><option>Cheque</option></select></label><label>Payment frequency<select name="payment_frequency" value={contractForm.payment_frequency} onChange={handleContractChange}><option>Monthly</option><option>Every 3 months</option><option>Every 6 months</option><option>Yearly</option></select></label></div>
                 <label>Notes<textarea name="notes" value={contractForm.notes} onChange={handleContractChange} placeholder="Lease notes" /></label>
                 <button className="primary-button" type="submit">Create contract</button>
