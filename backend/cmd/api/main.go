@@ -33,7 +33,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", healthHandler)
 	mux.HandleFunc("POST /api/v1/auth/login", loginHandler(authService))
-	mux.HandleFunc("GET /api/v1/auth/me", meHandler(authService))
+	mux.HandleFunc("GET /api/v1/auth/me", meHandler())
 	mux.HandleFunc("PUT /api/v1/auth/me", updateProfileHandler(authService))
 	mux.HandleFunc("POST /api/v1/auth/me/password", changePasswordHandler(authService))
 	handler.RegisterRoutes(mux)
@@ -96,7 +96,7 @@ func currentUserFromRequest(request *http.Request) (*auth.User, bool) {
 	return user, ok
 }
 
-func meHandler(authService *auth.Service) http.HandlerFunc {
+func meHandler() http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		user, ok := currentUserFromRequest(request)
 		if !ok {

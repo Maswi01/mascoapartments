@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import Swal from 'sweetalert2'
 import heroImage from './assets/hero.png'
 import './App.css'
@@ -173,12 +173,15 @@ function App() {
     setSession(null)
   }
 
+  const sessionExpiredRef = useRef(false)
+
   const apiFetch = async (path: string, options: RequestInit = {}) => {
     const response = await fetch(`${apiURL}${path}`, {
       ...options,
       headers: { ...options.headers, Authorization: `Bearer ${session?.token ?? ''}` },
     })
-    if (response.status === 401) {
+    if (response.status === 401 && !sessionExpiredRef.current) {
+      sessionExpiredRef.current = true
       logout()
       void Swal.fire({ icon: 'info', title: 'Session expired', text: 'Please sign in again.', confirmButtonColor: '#133d32' })
     }
@@ -261,6 +264,7 @@ function App() {
     }
     const nextSession = await response.json() as Session
     localStorage.setItem('masco-session', JSON.stringify(nextSession))
+    sessionExpiredRef.current = false
     setSession(nextSession)
     void showSuccess('Welcome back')
   }
