@@ -133,15 +133,21 @@ func (s *Service) GetUnit(id uint64) (*Unit, error) {
 }
 
 func (s *Service) UpdateUnit(unit Unit) (*Unit, error) {
-	if unit.ID == 0 || unit.Number == "" || unit.Type == "" { return nil, errors.New("unit id, number, and type are required") }
-	if _, ok := s.units[unit.ID]; !ok { return nil, ErrUnitNotFound }
+	if unit.ID == 0 || unit.Number == "" || unit.Type == "" {
+		return nil, errors.New("unit id, number, and type are required")
+	}
+	if _, ok := s.units[unit.ID]; !ok {
+		return nil, ErrUnitNotFound
+	}
 	unit.Status = s.units[unit.ID].Status
 	s.units[unit.ID] = &unit
 	return &unit, nil
 }
 
 func (s *Service) DeleteUnit(id uint64) error {
-	if _, ok := s.units[id]; !ok { return ErrUnitNotFound }
+	if _, ok := s.units[id]; !ok {
+		return ErrUnitNotFound
+	}
 	delete(s.units, id)
 	return nil
 }

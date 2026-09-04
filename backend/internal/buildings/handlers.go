@@ -165,20 +165,35 @@ func (h *Handler) createUnit(writer http.ResponseWriter, request *http.Request) 
 
 func (h *Handler) updateUnit(writer http.ResponseWriter, request *http.Request) {
 	id, ok := pathID(request)
-	if !ok { writeJSONError(writer, http.StatusBadRequest, "invalid unit id"); return }
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid unit id")
+		return
+	}
 	var unit Unit
-	if err := json.NewDecoder(request.Body).Decode(&unit); err != nil { writeJSONError(writer, http.StatusBadRequest, "invalid unit payload"); return }
+	if err := json.NewDecoder(request.Body).Decode(&unit); err != nil {
+		writeJSONError(writer, http.StatusBadRequest, "invalid unit payload")
+		return
+	}
 	unit.ID = id
 	updated, err := h.service.UpdateUnit(unit)
-	if err != nil { writeJSONError(writer, http.StatusBadRequest, err.Error()); return }
+	if err != nil {
+		writeJSONError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
 	writer.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(writer).Encode(updated)
 }
 
 func (h *Handler) deleteUnit(writer http.ResponseWriter, request *http.Request) {
 	id, ok := pathID(request)
-	if !ok { writeJSONError(writer, http.StatusBadRequest, "invalid unit id"); return }
-	if err := h.service.DeleteUnit(id); err != nil { writeJSONError(writer, http.StatusBadRequest, err.Error()); return }
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid unit id")
+		return
+	}
+	if err := h.service.DeleteUnit(id); err != nil {
+		writeJSONError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
 	writer.WriteHeader(http.StatusNoContent)
 }
 
