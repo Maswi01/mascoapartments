@@ -202,6 +202,7 @@ function App() {
   const [unitPageMode, setUnitPageMode] = useState<"list" | "create">(() =>
     window.location.pathname === "/units/new" ? "create" : "list",
   );
+  const [editingUnitID, setEditingUnitID] = useState<string | null>(null);
   const [contractForm, setContractForm] = useState(defaultContractForm);
   const [paymentForm, setPaymentForm] = useState(defaultPaymentForm);
   const [documentContractID, setDocumentContractID] = useState("");
@@ -443,32 +444,10 @@ function App() {
         : current.filter((_, index) => index !== rowIndex),
     );
 
-  const editUnit = async (unit: UnitRecord) => {
-    const result = await Swal.fire({
-      title: `Edit ${unit.number}`,
-      input: "text",
-      inputLabel: "Room number",
-      inputValue: unit.number,
-      showCancelButton: true,
-      confirmButtonText: "Save changes",
-      confirmButtonColor: "#133d32",
-    });
-    if (!result.isConfirmed || !result.value) return;
-    const response = await apiFetch(`/units/${unit.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...unit, number: result.value }),
-    });
-    if (!response.ok) {
-      await showRequestError(response, "Could not update unit.");
-      return;
-    }
-    setUnits((current) =>
-      current.map((item) =>
-        item.id === unit.id ? { ...item, number: result.value } : item,
-      ),
-    );
-    void showSuccess("Unit updated");
+  const editUnit = (unit: UnitRecord) => {
+    setEditingUnitID(unit.id);
+    setUnitRows([{ number: unit.number, floor_id: unit.floor_id ?? "", type: unit.type, description: "", status: unit.status, base_rent: formatAmount(unit.base_rent) }]);
+    goTo(`/units/edit/${unit.id}`);
   };
 
   const deleteUnit = async (unit: UnitRecord) => {
@@ -499,6 +478,19 @@ function App() {
         text: "Select the building this unit belongs to from the portfolio context selector.",
         confirmButtonColor: "#133d32",
       });
+      return;
+    }
+    if (editingUnitID) {
+      const row = unitRows[0];
+      const response = await apiFetch(`/units/${editingUnitID}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...row, id: Number(editingUnitID), building_id: Number(selectedBuildingID), floor_id: Number(row.floor_id) || 0, base_rent: amountNumber(row.base_rent) }) });
+      if (!response.ok) { await showRequestError(response, "Could not update unit."); return; }
+      const payload = await apiFetch(`/buildings/${selectedBuildingID}/units`);
+      const data = await payload.json();
+      setUnits(data.data ?? []);
+      setEditingUnitID(null);
+      setUnitRows([{ ...defaultUnitForm }]);
+      goTo("/units");
+      void showSuccess("Unit updated");
       return;
     }
     for (const row of unitRows) {
@@ -934,6 +926,10 @@ function App() {
   const visibleUnits = filteredUnits.slice(
     (unitPage - 1) * unitPageSize,
     unitPage * unitPageSize,
+  );
+  const filteredUnitsRentTotal = filteredUnits.reduce(
+    (total, unit) => total + unit.base_rent,
+    0,
   );
 
   const showView = (nextView: View) => {
@@ -1697,19 +1693,13 @@ function App() {
             {unitPageMode === "create" && (
               <form className="panel form-panel" onSubmit={handleUnitSubmit}>
                 <div className="section-heading">
-                  <h2>Add units</h2>
+                  <h2>{editingUnitID ? "Edit unit" : "Add units"}</h2>
                   <div>
+                    {!editingUnitID && <button className="secondary-button" type="button" onClick={addUnitRow}>+ Add row</button>}
                     <button
                       className="secondary-button"
                       type="button"
-                      onClick={addUnitRow}
-                    >
-                      + Add row
-                    </button>
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={() => goTo("/units")}
+                      onClick={() => { setEditingUnitID(null); goTo("/units"); }}
                     >
                       Back to list
                     </button>
@@ -1782,9 +1772,7 @@ function App() {
                     </div>
                   ))}
                 </div>
-                <button className="primary-button" type="submit">
-                  Save unit
-                </button>
+                <button className="primary-button" type="submit">{editingUnitID ? "Save changes" : "Save unit"}</button>
               </form>
             )}
             <div className="panel list-panel">
@@ -1912,6 +1900,13 @@ function App() {
                           ))
                         )}
                       </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colSpan={4}>Total required rent</td>
+                          <td>{formatAmount(filteredUnitsRentTotal)}</td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                   <div className="pagination">
