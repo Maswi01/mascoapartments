@@ -22,13 +22,28 @@ func (s *MySQLService) CreateBuilding(building Building) (*Building, error) {
 	}
 	building.CreatedAt = time.Now()
 	building.UpdatedAt = building.CreatedAt
-	result, err := s.db.Exec(`INSERT INTO buildings (name, code, address, description, number_of_floors, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, building.Name, building.Code, building.Address, building.Description, building.Floors, building.Status, building.CreatedAt, building.UpdatedAt)
+	tx, err := s.db.Begin()
 	if err != nil {
+		return nil, fmt.Errorf("start building transaction: %w", err)
+	}
+	result, err := tx.Exec(`INSERT INTO buildings (name, code, address, description, number_of_floors, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, building.Name, building.Code, building.Address, building.Description, building.Floors, building.Status, building.CreatedAt, building.UpdatedAt)
+	if err != nil {
+		_ = tx.Rollback()
 		return nil, fmt.Errorf("save building: %w", err)
 	}
 	building.ID, err = databaseID(result)
 	if err != nil {
+		_ = tx.Rollback()
 		return nil, fmt.Errorf("read building id: %w", err)
+	}
+	for floorNumber := 1; floorNumber <= building.Floors; floorNumber++ {
+		if _, err := tx.Exec(`INSERT INTO floors (building_id, name, description, created_at, updated_at) VALUES (?, ?, '', ?, ?)`, building.ID, fmt.Sprintf("Floor %d", floorNumber), building.CreatedAt, building.UpdatedAt); err != nil {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("create floor %d: %w", floorNumber, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit building: %w", err)
 	}
 	return &building, nil
 }

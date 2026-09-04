@@ -5,6 +5,15 @@ import './App.css'
 
 const apiURL = import.meta.env.VITE_API_URL ?? 'http://localhost:6400/api/v1'
 
+const formatAmount = (value: string | number) => {
+  const raw = String(value).replace(/[^0-9.]/g, '')
+  const [integerPart, decimalPart] = raw.split('.')
+  const formattedInteger = (integerPart || '0').replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  return decimalPart === undefined ? formattedInteger : `${formattedInteger}.${decimalPart.slice(0, 2)}`
+}
+
+const amountNumber = (value: string) => Number(value.replace(/,/g, '')) || 0
+
 const defaultForm = {
   name: '',
   code: '',
@@ -375,7 +384,7 @@ function App() {
         ...contractForm,
         tenant_id: Number(contractForm.tenant_id),
         unit_id: Number(contractForm.unit_id),
-        monthly_rent: Number(contractForm.monthly_rent),
+        monthly_rent: amountNumber(contractForm.monthly_rent),
       }),
     })
 
@@ -400,7 +409,7 @@ function App() {
 
   const handlePaymentSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    const response = await apiFetch('/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...paymentForm, invoice_id: Number(paymentForm.invoice_id), amount: Number(paymentForm.amount) }) })
+    const response = await apiFetch('/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...paymentForm, invoice_id: Number(paymentForm.invoice_id), amount: amountNumber(paymentForm.amount) }) })
     if (!response.ok) {
       await showRequestError(response, 'Could not record payment.')
       return
@@ -638,8 +647,8 @@ function App() {
         <div className="dashboard-columns">
           <div className="panel table-panel"><div className="section-heading"><h2>Contracts to expire</h2><span>Next 30 days</span></div>{expiring30.length === 0 ? <p className="empty-state">No contracts expiring in next 30 days.</p> : expiring30.map((contract) => <div className="dashboard-row" key={contract.id}><strong>{contract.tenant_id}</strong><span>{contract.unit_id}</span><span>{contract.end_date}</span><button className="row-action" onClick={() => showView('contracts')}>View / Pay</button></div>)}</div>
           <div className="panel table-panel"><div className="section-heading"><h2>Expired contracts</h2><span>{expiredContracts.length} records</span></div>{expiredContracts.length === 0 ? <p className="empty-state">No expired contracts.</p> : expiredContracts.map((contract) => <div className="dashboard-row" key={contract.id}><strong>{contract.tenant_id}</strong><span>{contract.unit_id}</span><span>{contract.end_date}</span><button className="row-action" onClick={() => showView('contracts')}>View</button></div>)}</div>
-          <div className="panel table-panel"><div className="section-heading"><h2>Unpaid active contracts</h2><span>Balance due</span></div>{unpaidInvoices.length === 0 ? <p className="empty-state">No unpaid active contracts.</p> : unpaidInvoices.map((invoice) => <div className="dashboard-row" key={invoice.id}><strong>{invoice.number}</strong><span>{invoice.status}</span><span>${invoice.amount}</span><button className="row-action" onClick={() => showView('payments')}>Pay</button></div>)}</div>
-          <div className="panel table-panel"><div className="section-heading"><h2>Payments today</h2><span>Total: {paymentsToday.length}</span></div>{paymentsToday.length === 0 ? <p className="empty-state">No payments today.</p> : paymentsToday.map((payment) => <div className="dashboard-row" key={payment.id}><strong>{payment.payment_reference}</strong><span>{payment.payment_method}</span><span>${payment.amount}</span></div>)}</div>
+          <div className="panel table-panel"><div className="section-heading"><h2>Unpaid active contracts</h2><span>Balance due</span></div>{unpaidInvoices.length === 0 ? <p className="empty-state">No unpaid active contracts.</p> : unpaidInvoices.map((invoice) => <div className="dashboard-row" key={invoice.id}><strong>{invoice.number}</strong><span>{invoice.status}</span><span>{formatAmount(invoice.amount)}</span><button className="row-action" onClick={() => showView('payments')}>Pay</button></div>)}</div>
+          <div className="panel table-panel"><div className="section-heading"><h2>Payments today</h2><span>Total: {paymentsToday.length}</span></div>{paymentsToday.length === 0 ? <p className="empty-state">No payments today.</p> : paymentsToday.map((payment) => <div className="dashboard-row" key={payment.id}><strong>{payment.payment_reference}</strong><span>{payment.payment_method}</span><span>{formatAmount(payment.amount)}</span></div>)}</div>
         </div>
         </div>}
 
@@ -652,7 +661,7 @@ function App() {
           <div className="catalog-grid"><div className="catalog-card"><span>Buildings</span><strong>{buildings.length}</strong><small>Register and manage properties</small></div><div className="catalog-card"><span>Payment methods</span><strong>6</strong><small>Cash, bank, mobile, card, cheque, other</small></div><div className="catalog-card"><span>Roles</span><strong>{roles.length}</strong><small>Administrator, Manager, Accountant, Staff</small></div></div>
         </div>}
 
-        {view === 'reports' && <div className="reports-layout"><div className="registration-intro"><p className="eyebrow">Office reports</p><h2>All buildings combined</h2><p>Portfolio-wide statements for administration and owner review.</p></div><div className="reports-grid"><div className="report-card"><span>Transaction statement</span><strong>{payments.length}</strong><small>Recorded payments across all buildings</small></div><div className="report-card"><span>Expenses statement</span><strong>0</strong><small>Expenses will appear here when registered</small></div><div className="report-card"><span>Monthly rent statement</span><strong>{invoices.length}</strong><small>Generated invoices across the portfolio</small></div><div className="report-card"><span>Tenant statement</span><strong>{tenants.length}</strong><small>Tenants with active portfolio records</small></div></div><div className="panel table-panel"><div className="section-heading"><h2>Recent transactions</h2><span>All buildings</span></div>{payments.length === 0 ? <p className="empty-state">No transactions recorded.</p> : payments.slice(0, 12).map((payment) => <div className="dashboard-row" key={payment.id}><strong>{payment.payment_reference}</strong><span>{payment.payment_method}</span><span>${payment.amount}</span><span>{payment.payment_date}</span></div>)}</div></div>}
+        {view === 'reports' && <div className="reports-layout"><div className="registration-intro"><p className="eyebrow">Office reports</p><h2>All buildings combined</h2><p>Portfolio-wide statements for administration and owner review.</p></div><div className="reports-grid"><div className="report-card"><span>Transaction statement</span><strong>{payments.length}</strong><small>Recorded payments across all buildings</small></div><div className="report-card"><span>Expenses statement</span><strong>0</strong><small>Expenses will appear here when registered</small></div><div className="report-card"><span>Monthly rent statement</span><strong>{invoices.length}</strong><small>Generated invoices across the portfolio</small></div><div className="report-card"><span>Tenant statement</span><strong>{tenants.length}</strong><small>Tenants with active portfolio records</small></div></div><div className="panel table-panel"><div className="section-heading"><h2>Recent transactions</h2><span>All buildings</span></div>{payments.length === 0 ? <p className="empty-state">No transactions recorded.</p> : payments.slice(0, 12).map((payment) => <div className="dashboard-row" key={payment.id}><strong>{payment.payment_reference}</strong><span>{payment.payment_method}</span><span>{formatAmount(payment.amount)}</span><span>{payment.payment_date}</span></div>)}</div></div>}
 
         {view === 'buildings' && <div className="panel-grid">
           <form className="panel form-panel" onSubmit={handleSubmit}>
@@ -847,7 +856,7 @@ function App() {
             </div>
             <label>
               Monthly rent
-              <input type="number" min="0" step="0.01" name="monthly_rent" value={contractForm.monthly_rent} onChange={handleContractChange} />
+              <input inputMode="decimal" name="monthly_rent" value={contractForm.monthly_rent} onChange={(event) => setContractForm((current) => ({ ...current, monthly_rent: formatAmount(event.target.value) }))} />
             </label>
             <div className="inline-fields">
               <label>
@@ -901,7 +910,7 @@ function App() {
                     <p>Tenant ID: {contract.tenant_id}</p>
                     <div className="meta-row">
                       <span>Unit ID: {contract.unit_id}</span>
-                      <span>${contract.monthly_rent} / {contract.payment_frequency || 'Monthly'}</span>
+                      <span>{formatAmount(contract.monthly_rent)} / {contract.payment_frequency || 'Monthly'}</span>
                     </div>
                     <button className="document-link" type="button" onClick={() => void handleContractPreview(contract.id)}>Generate contract</button>
                   </article>
@@ -942,7 +951,7 @@ function App() {
           <div className="panel list-panel">
             <h2>Generate from contract</h2>
             <div className="building-list">
-              {contracts.filter((contract) => contract.status === 'Active').length === 0 ? <p className="empty-state">Create an active contract before generating an invoice.</p> : contracts.filter((contract) => contract.status === 'Active').map((contract) => <article className="building-card" key={contract.id}><h3>{contract.contract_type} contract</h3><p>${contract.monthly_rent} / {contract.payment_frequency || 'Monthly'}</p><button className="primary-button" type="button" onClick={() => void handleGenerateInvoice(contract.id)}>Generate invoice</button></article>)}
+              {contracts.filter((contract) => contract.status === 'Active').length === 0 ? <p className="empty-state">Create an active contract before generating an invoice.</p> : contracts.filter((contract) => contract.status === 'Active').map((contract) => <article className="building-card" key={contract.id}><h3>{contract.contract_type} contract</h3><p>{formatAmount(contract.monthly_rent)} / {contract.payment_frequency || 'Monthly'}</p><button className="primary-button" type="button" onClick={() => void handleGenerateInvoice(contract.id)}>Generate invoice</button></article>)}
             </div>
           </div>
           <div className="panel list-panel">
@@ -961,7 +970,7 @@ function App() {
                     </div>
                     <p>Invoice record: {invoice.id}</p>
                     <div className="meta-row">
-                      <span>Amount: ${invoice.amount}</span>
+                      <span>Amount: {formatAmount(invoice.amount)}</span>
                     </div>
                   </article>
                 ))
@@ -974,15 +983,15 @@ function App() {
         {view === 'payments' && <div className="panel-grid">
           <form className="panel form-panel" onSubmit={handlePaymentSubmit}>
             <h2>Record payment</h2>
-            <label>Invoice<select name="invoice_id" value={paymentForm.invoice_id} onChange={handlePaymentChange} required><option value="">Select invoice</option>{invoices.filter((invoice) => invoice.status !== 'Paid' && invoice.status !== 'Cancelled').map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.number} - ${invoice.amount} ({invoice.status})</option>)}</select></label>
-            <label>Amount received<input name="amount" type="number" min="0.01" step="0.01" value={paymentForm.amount} onChange={handlePaymentChange} required /></label>
+            <label>Invoice<select name="invoice_id" value={paymentForm.invoice_id} onChange={handlePaymentChange} required><option value="">Select invoice</option>{invoices.filter((invoice) => invoice.status !== 'Paid' && invoice.status !== 'Cancelled').map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.number} - {formatAmount(invoice.amount)} ({invoice.status})</option>)}</select></label>
+            <label>Amount received<input name="amount" inputMode="decimal" value={paymentForm.amount} onChange={(event) => setPaymentForm((current) => ({ ...current, amount: formatAmount(event.target.value) }))} required /></label>
             <div className="inline-fields"><label>Payment date<input name="payment_date" type="date" value={paymentForm.payment_date} onChange={handlePaymentChange} required /></label><label>Method<select name="payment_method" value={paymentForm.payment_method} onChange={handlePaymentChange}><option>Bank Transfer</option><option>Cash</option><option>Mobile Money</option><option>Card</option><option>Cheque</option></select></label></div>
             <label>Payment reference<input name="payment_reference" value={paymentForm.payment_reference} onChange={handlePaymentChange} placeholder="Bank or receipt reference" required /></label>
             <label>Receipt number<input name="receipt_number" value={paymentForm.receipt_number} onChange={handlePaymentChange} placeholder="Optional receipt number" /></label>
             <label>Notes<textarea name="notes" value={paymentForm.notes} onChange={handlePaymentChange} placeholder="Optional payment notes" /></label>
             <button className="primary-button" type="submit">Record payment</button>
           </form>
-          <div className="panel list-panel"><h2>Payment history</h2><div className="building-list">{payments.length === 0 ? <p className="empty-state">No payments recorded.</p> : payments.map((payment) => <article className="building-card" key={payment.id}><div className="building-header"><div><h3>${payment.amount}</h3><span className="code-tag">{payment.payment_method}</span></div><span className="status-badge">{payment.payment_date}</span></div><p>{payment.payment_reference}</p><div className="meta-row"><span>Invoice #{payment.invoice_id}</span><span>{payment.receipt_number || 'No receipt number'}</span></div></article>)}</div></div>
+          <div className="panel list-panel"><h2>Payment history</h2><div className="building-list">{payments.length === 0 ? <p className="empty-state">No payments recorded.</p> : payments.map((payment) => <article className="building-card" key={payment.id}><div className="building-header"><div><h3>{formatAmount(payment.amount)}</h3><span className="code-tag">{payment.payment_method}</span></div><span className="status-badge">{payment.payment_date}</span></div><p>{payment.payment_reference}</p><div className="meta-row"><span>Invoice #{payment.invoice_id}</span><span>{payment.receipt_number || 'No receipt number'}</span></div></article>)}</div></div>
         </div>}
 
         {view === 'settings' && <div className="panel-grid">

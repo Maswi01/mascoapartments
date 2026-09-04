@@ -2,6 +2,7 @@ package buildings
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -46,6 +47,10 @@ func (s *Service) CreateBuilding(b Building) (*Building, error) {
 	}
 
 	s.buildings[b.ID] = &b
+	for floorNumber := 1; floorNumber <= b.Floors; floorNumber++ {
+		floorID := uint64(len(s.floors) + 1)
+		s.floors[floorID] = &Floor{ID: floorID, BuildingID: b.ID, Name: fmt.Sprintf("Floor %d", floorNumber)}
+	}
 	return s.buildings[b.ID], nil
 }
 
