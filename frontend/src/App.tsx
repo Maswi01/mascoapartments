@@ -247,7 +247,10 @@ function App() {
       setUnits([])
       return
     }
-    void apiFetch(`/buildings/${selectedBuildingID}/units`).then((response) => response.json()).then((payload) => setUnits(payload.data ?? [])).catch(() => setUnits([]))
+    void apiFetch(`/buildings/${selectedBuildingID}/units`).then(async (response) => {
+      if (!response.ok) throw new Error('Could not load units')
+      return response.json()
+    }).then((payload) => setUnits(payload.data ?? [])).catch(() => setUnits([]))
   }, [selectedBuildingID, session])
 
   useEffect(() => {

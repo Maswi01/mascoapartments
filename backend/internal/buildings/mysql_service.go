@@ -108,7 +108,7 @@ func (s *MySQLService) CreateUnit(unit Unit) (*Unit, error) {
 }
 
 func (s *MySQLService) ListUnitsByBuilding(buildingID uint64) []*Unit {
-	rows, err := s.db.Query(`SELECT id, building_id, COALESCE(floor_id, ''), unit_number, unit_type, description, bedrooms, bathrooms, approximate_size, status, created_at, updated_at FROM units WHERE building_id = ? ORDER BY unit_number`, buildingID)
+	rows, err := s.db.Query(`SELECT id, building_id, COALESCE(floor_id, 0), unit_number, unit_type, COALESCE(description, ''), COALESCE(bedrooms, 0), COALESCE(bathrooms, 0), COALESCE(approximate_size, ''), status, created_at, updated_at FROM units WHERE building_id = ? ORDER BY unit_number`, buildingID)
 	if err != nil {
 		return []*Unit{}
 	}
@@ -125,7 +125,7 @@ func (s *MySQLService) ListUnitsByBuilding(buildingID uint64) []*Unit {
 
 func (s *MySQLService) GetUnit(id uint64) (*Unit, error) {
 	unit := &Unit{}
-	err := s.db.QueryRow(`SELECT id, building_id, COALESCE(floor_id, ''), unit_number, unit_type, description, bedrooms, bathrooms, approximate_size, status, created_at, updated_at FROM units WHERE id = ?`, id).Scan(&unit.ID, &unit.BuildingID, &unit.FloorID, &unit.Number, &unit.Type, &unit.Description, &unit.Bedrooms, &unit.Bathrooms, &unit.Size, &unit.Status, &unit.CreatedAt, &unit.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, building_id, COALESCE(floor_id, 0), unit_number, unit_type, COALESCE(description, ''), COALESCE(bedrooms, 0), COALESCE(bathrooms, 0), COALESCE(approximate_size, ''), status, created_at, updated_at FROM units WHERE id = ?`, id).Scan(&unit.ID, &unit.BuildingID, &unit.FloorID, &unit.Number, &unit.Type, &unit.Description, &unit.Bedrooms, &unit.Bathrooms, &unit.Size, &unit.Status, &unit.CreatedAt, &unit.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUnitNotFound
 	}
