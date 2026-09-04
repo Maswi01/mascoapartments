@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -19,23 +20,23 @@ type ServiceAPI interface {
 	CreateBuilding(Building) (*Building, error)
 	ListBuildings() []*Building
 	CreateFloor(Floor) (*Floor, error)
-	ListFloorsByBuilding(string) []*Floor
+	ListFloorsByBuilding(uint64) []*Floor
 	CreateUnit(Unit) (*Unit, error)
-	ListUnitsByBuilding(string) []*Unit
-	GetUnit(string) (*Unit, error)
+	ListUnitsByBuilding(uint64) []*Unit
+	GetUnit(uint64) (*Unit, error)
 	CreateTenant(Tenant) (*Tenant, error)
-	ListTenants(string) []*Tenant
-	GetTenant(string) (*Tenant, error)
+	ListTenants(uint64) []*Tenant
+	GetTenant(uint64) (*Tenant, error)
 	CreateContract(Contract) (*Contract, error)
-	ListContracts(string) []*Contract
-	GetContract(string) (*Contract, error)
+	ListContracts(uint64) []*Contract
+	GetContract(uint64) (*Contract, error)
 	CreateDocument(Document) (*Document, error)
-	ListDocumentsByContract(string) []*Document
+	ListDocumentsByContract(uint64) []*Document
 	CreateInvoice(Invoice) (*Invoice, error)
-	ListInvoices(string) []*Invoice
+	ListInvoices(uint64) []*Invoice
 	CreatePayment(Payment) (*Payment, error)
-	ListPayments(string) []*Payment
-	DashboardSummary(string) DashboardSummary
+	ListPayments(uint64) []*Payment
+	DashboardSummary(uint64) DashboardSummary
 }
 
 func NewHandler(service ServiceAPI) *Handler {
@@ -66,7 +67,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *Handler) dashboard(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.DashboardSummary(request.URL.Query().Get("building_id"))})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.DashboardSummary(queryID(request))})
 }
 
 func (h *Handler) listBuildings(writer http.ResponseWriter, request *http.Request) {
@@ -93,13 +94,21 @@ func (h *Handler) createBuilding(writer http.ResponseWriter, request *http.Reque
 }
 
 func (h *Handler) listFloors(writer http.ResponseWriter, request *http.Request) {
-	buildingID := request.PathValue("id")
+	buildingID, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid building id")
+		return
+	}
 	writer.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListFloorsByBuilding(buildingID)})
 }
 
 func (h *Handler) createFloor(writer http.ResponseWriter, request *http.Request) {
-	buildingID := request.PathValue("id")
+	buildingID, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid building id")
+		return
+	}
 	var floor Floor
 	if err := json.NewDecoder(request.Body).Decode(&floor); err != nil {
 		writeJSONError(writer, http.StatusBadRequest, "invalid floor payload")
@@ -118,13 +127,21 @@ func (h *Handler) createFloor(writer http.ResponseWriter, request *http.Request)
 }
 
 func (h *Handler) listUnits(writer http.ResponseWriter, request *http.Request) {
-	buildingID := request.PathValue("id")
+	buildingID, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid building id")
+		return
+	}
 	writer.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListUnitsByBuilding(buildingID)})
 }
 
 func (h *Handler) createUnit(writer http.ResponseWriter, request *http.Request) {
-	buildingID := request.PathValue("id")
+	buildingID, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid building id")
+		return
+	}
 	var unit Unit
 	if err := json.NewDecoder(request.Body).Decode(&unit); err != nil {
 		writeJSONError(writer, http.StatusBadRequest, "invalid unit payload")
@@ -144,7 +161,7 @@ func (h *Handler) createUnit(writer http.ResponseWriter, request *http.Request) 
 
 func (h *Handler) listTenants(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListTenants(request.URL.Query().Get("building_id"))})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListTenants(queryID(request))})
 }
 
 func (h *Handler) createTenant(writer http.ResponseWriter, request *http.Request) {
@@ -167,7 +184,7 @@ func (h *Handler) createTenant(writer http.ResponseWriter, request *http.Request
 
 func (h *Handler) listContracts(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListContracts(request.URL.Query().Get("building_id"))})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListContracts(queryID(request))})
 }
 
 func (h *Handler) createContract(writer http.ResponseWriter, request *http.Request) {
@@ -197,7 +214,12 @@ var contractPreviewTemplate = template.Must(template.New("contract").Parse(`<!do
 <h2>MASHARTI YA MKATABA</h2><p style="white-space:pre-wrap">{{.Contract.Terms}}</p><p style="white-space:pre-wrap">{{.Contract.Notes}}</p><div class="signatures"><div>____________________________<br>MPANGAJI<br>Tarehe: ______________</div><div>____________________________<br>MWENYE JENGO<br>Tarehe: ______________</div></div></body></html>`))
 
 func (h *Handler) previewContract(writer http.ResponseWriter, request *http.Request) {
-	contract, err := h.service.GetContract(request.PathValue("id"))
+	contractID, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	contract, err := h.service.GetContract(contractID)
 	if err != nil {
 		writeJSONError(writer, http.StatusNotFound, err.Error())
 		return
@@ -223,7 +245,12 @@ func (h *Handler) previewContract(writer http.ResponseWriter, request *http.Requ
 }
 
 func (h *Handler) generateInvoice(writer http.ResponseWriter, request *http.Request) {
-	contract, err := h.service.GetContract(request.PathValue("id"))
+	contractID, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	contract, err := h.service.GetContract(contractID)
 	if err != nil {
 		writeJSONError(writer, http.StatusNotFound, err.Error())
 		return
@@ -239,7 +266,7 @@ func (h *Handler) generateInvoice(writer http.ResponseWriter, request *http.Requ
 		TenantID:    contract.TenantID,
 		BuildingID:  unit.BuildingID,
 		UnitID:      unit.ID,
-		Number:      "INV-" + contract.ID + "-" + now.Format("20060102"),
+		Number:      "INV-" + strconv.FormatUint(contract.ID, 10) + "-" + now.Format("20060102"),
 		IssueDate:   now.Format("2006-01-02"),
 		DueDate:     now.AddDate(0, 0, 7).Format("2006-01-02"),
 		Amount:      contract.MonthlyRent,
@@ -256,8 +283,13 @@ func (h *Handler) generateInvoice(writer http.ResponseWriter, request *http.Requ
 }
 
 func (h *Handler) listDocuments(writer http.ResponseWriter, request *http.Request) {
+	contractID, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid contract id")
+		return
+	}
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListDocumentsByContract(request.PathValue("id"))})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListDocumentsByContract(contractID)})
 }
 
 func (h *Handler) uploadDocument(writer http.ResponseWriter, request *http.Request) {
@@ -287,7 +319,7 @@ func (h *Handler) uploadDocument(writer http.ResponseWriter, request *http.Reque
 		writeJSONError(writer, http.StatusInternalServerError, "create upload directory")
 		return
 	}
-	filename := "contract-" + randomID() + extension
+	filename := "contract-" + strconv.FormatInt(time.Now().UnixNano(), 10) + extension
 	path := filepath.Join(directory, filename)
 	destination, err := os.Create(path)
 	if err != nil {
@@ -306,7 +338,12 @@ func (h *Handler) uploadDocument(writer http.ResponseWriter, request *http.Reque
 	if name == "" {
 		name = header.Filename
 	}
-	document, err := h.service.CreateDocument(Document{ContractID: request.PathValue("id"), Name: name, OriginalName: header.Filename, Path: "/uploads/" + filename, MimeType: header.Header.Get("Content-Type")})
+	contractID, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	document, err := h.service.CreateDocument(Document{ContractID: contractID, Name: name, OriginalName: header.Filename, Path: "/uploads/" + filename, MimeType: header.Header.Get("Content-Type")})
 	if err != nil {
 		_ = os.Remove(path)
 		writeJSONError(writer, http.StatusBadRequest, err.Error())
@@ -319,7 +356,7 @@ func (h *Handler) uploadDocument(writer http.ResponseWriter, request *http.Reque
 
 func (h *Handler) listInvoices(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListInvoices(request.URL.Query().Get("building_id"))})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListInvoices(queryID(request))})
 }
 
 func (h *Handler) createInvoice(writer http.ResponseWriter, request *http.Request) {
@@ -342,7 +379,17 @@ func (h *Handler) createInvoice(writer http.ResponseWriter, request *http.Reques
 
 func (h *Handler) listPayments(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListPayments(request.URL.Query().Get("building_id"))})
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListPayments(queryID(request))})
+}
+
+func pathID(request *http.Request) (uint64, bool) {
+	id, err := strconv.ParseUint(request.PathValue("id"), 10, 64)
+	return id, err == nil && id > 0
+}
+
+func queryID(request *http.Request) uint64 {
+	id, _ := strconv.ParseUint(request.URL.Query().Get("building_id"), 10, 64)
+	return id
 }
 
 func (h *Handler) createPayment(writer http.ResponseWriter, request *http.Request) {

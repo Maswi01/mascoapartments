@@ -360,6 +360,8 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...contractForm,
+        tenant_id: Number(contractForm.tenant_id),
+        unit_id: Number(contractForm.unit_id),
         monthly_rent: Number(contractForm.monthly_rent),
       }),
     })
@@ -385,7 +387,7 @@ function App() {
 
   const handlePaymentSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    const response = await apiFetch('/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...paymentForm, amount: Number(paymentForm.amount) }) })
+    const response = await apiFetch('/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...paymentForm, invoice_id: Number(paymentForm.invoice_id), amount: Number(paymentForm.amount) }) })
     if (!response.ok) {
       await showRequestError(response, 'Could not record payment.')
       return

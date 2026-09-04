@@ -82,11 +82,11 @@ func TestServiceTracksPortfolioAndDashboardSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create document: %v", err)
 	}
-	if document.ID == "" || len(service.ListDocumentsByContract(contract.ID)) != 1 {
+	if document.ID == 0 || len(service.ListDocumentsByContract(contract.ID)) != 1 {
 		t.Fatal("expected contract document to be stored")
 	}
 
-	summary := service.DashboardSummary("")
+	summary := service.DashboardSummary(0)
 	if summary.Buildings != 1 {
 		t.Fatalf("expected 1 building, got %d", summary.Buildings)
 	}

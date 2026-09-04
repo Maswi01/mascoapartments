@@ -4,7 +4,7 @@ import "time"
 
 // Building is the top-level property record for a physical property.
 type Building struct {
-	ID          string    `json:"id"`
+	ID          uint64    `json:"id"`
 	Name        string    `json:"name"`
 	Code        string    `json:"code"`
 	Address     string    `json:"address"`
@@ -17,8 +17,8 @@ type Building struct {
 
 // Floor represents a level or floor inside a building.
 type Floor struct {
-	ID          string    `json:"id"`
-	BuildingID  string    `json:"building_id"`
+	ID          uint64    `json:"id"`
+	BuildingID  uint64    `json:"building_id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -27,9 +27,9 @@ type Floor struct {
 
 // Unit represents a rentable physical space in a building or floor.
 type Unit struct {
-	ID          string    `json:"id"`
-	BuildingID  string    `json:"building_id"`
-	FloorID     string    `json:"floor_id,omitempty"`
+	ID          uint64    `json:"id"`
+	BuildingID  uint64    `json:"building_id"`
+	FloorID     uint64    `json:"floor_id,omitempty"`
 	Number      string    `json:"number"`
 	Type        string    `json:"type"`
 	Description string    `json:"description,omitempty"`
@@ -42,7 +42,7 @@ type Unit struct {
 }
 
 type Tenant struct {
-	ID              string    `json:"id"`
+	ID              uint64    `json:"id"`
 	Type            string    `json:"type"`
 	FullName        string    `json:"full_name,omitempty"`
 	CompanyName     string    `json:"company_name,omitempty"`
@@ -58,9 +58,9 @@ type Tenant struct {
 }
 
 type Contract struct {
-	ID                    string    `json:"id"`
-	UnitID                string    `json:"unit_id"`
-	TenantID              string    `json:"tenant_id"`
+	ID                    uint64    `json:"id"`
+	UnitID                uint64    `json:"unit_id"`
+	TenantID              uint64    `json:"tenant_id"`
 	ContractType          string    `json:"contract_type"`
 	StartDate             string    `json:"start_date"`
 	EndDate               string    `json:"end_date,omitempty"`
@@ -76,8 +76,8 @@ type Contract struct {
 }
 
 type Document struct {
-	ID           string    `json:"id"`
-	ContractID   string    `json:"contract_id"`
+	ID           uint64    `json:"id"`
+	ContractID   uint64    `json:"contract_id"`
 	Name         string    `json:"name"`
 	OriginalName string    `json:"original_name"`
 	Path         string    `json:"path"`
@@ -86,11 +86,11 @@ type Document struct {
 }
 
 type Invoice struct {
-	ID          string    `json:"id"`
-	ContractID  string    `json:"contract_id"`
-	TenantID    string    `json:"tenant_id"`
-	BuildingID  string    `json:"building_id"`
-	UnitID      string    `json:"unit_id"`
+	ID          uint64    `json:"id"`
+	ContractID  uint64    `json:"contract_id"`
+	TenantID    uint64    `json:"tenant_id"`
+	BuildingID  uint64    `json:"building_id"`
+	UnitID      uint64    `json:"unit_id"`
 	Number      string    `json:"number"`
 	IssueDate   string    `json:"issue_date"`
 	DueDate     string    `json:"due_date"`
@@ -102,11 +102,11 @@ type Invoice struct {
 }
 
 type Payment struct {
-	ID               string    `json:"id"`
-	TenantID         string    `json:"tenant_id"`
-	InvoiceID        string    `json:"invoice_id"`
-	BuildingID       string    `json:"building_id"`
-	UnitID           string    `json:"unit_id"`
+	ID               uint64    `json:"id"`
+	TenantID         uint64    `json:"tenant_id"`
+	InvoiceID        uint64    `json:"invoice_id"`
+	BuildingID       uint64    `json:"building_id"`
+	UnitID           uint64    `json:"unit_id"`
 	PaymentReference string    `json:"payment_reference"`
 	Amount           float64   `json:"amount"`
 	PaymentDate      string    `json:"payment_date"`

@@ -1,8 +1,6 @@
 package buildings
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"time"
 )
@@ -18,32 +16,27 @@ var (
 
 // Service is a simple in-memory implementation for the initial MVP.
 type Service struct {
-	buildings map[string]*Building
-	floors    map[string]*Floor
-	units     map[string]*Unit
-	tenants   map[string]*Tenant
-	contracts map[string]*Contract
-	invoices  map[string]*Invoice
-	payments  map[string]*Payment
-	documents map[string]*Document
+	buildings map[uint64]*Building
+	floors    map[uint64]*Floor
+	units     map[uint64]*Unit
+	tenants   map[uint64]*Tenant
+	contracts map[uint64]*Contract
+	invoices  map[uint64]*Invoice
+	payments  map[uint64]*Payment
+	documents map[uint64]*Document
 }
 
 func NewService() *Service {
 	return &Service{
-		buildings: map[string]*Building{},
-		floors:    map[string]*Floor{},
-		units:     map[string]*Unit{},
-		tenants:   map[string]*Tenant{},
-		contracts: map[string]*Contract{},
-		invoices:  map[string]*Invoice{},
-		payments:  map[string]*Payment{},
-		documents: map[string]*Document{},
+		buildings: map[uint64]*Building{}, floors: map[uint64]*Floor{}, units: map[uint64]*Unit{},
+		tenants: map[uint64]*Tenant{}, contracts: map[uint64]*Contract{}, invoices: map[uint64]*Invoice{},
+		payments: map[uint64]*Payment{}, documents: map[uint64]*Document{},
 	}
 }
 
 func (s *Service) CreateBuilding(b Building) (*Building, error) {
-	if b.ID == "" {
-		b.ID = "bldg-" + randomID()
+	if b.ID == 0 {
+		b.ID = uint64(len(s.buildings) + 1)
 	}
 	if b.Name == "" {
 		return nil, errors.New("building name is required")
@@ -64,7 +57,7 @@ func (s *Service) ListBuildings() []*Building {
 	return items
 }
 
-func (s *Service) GetBuilding(id string) (*Building, error) {
+func (s *Service) GetBuilding(id uint64) (*Building, error) {
 	building, ok := s.buildings[id]
 	if !ok {
 		return nil, ErrBuildingNotFound
@@ -73,10 +66,10 @@ func (s *Service) GetBuilding(id string) (*Building, error) {
 }
 
 func (s *Service) CreateFloor(f Floor) (*Floor, error) {
-	if f.ID == "" {
-		f.ID = "floor-" + randomID()
+	if f.ID == 0 {
+		f.ID = uint64(len(s.floors) + 1)
 	}
-	if f.BuildingID == "" {
+	if f.BuildingID == 0 {
 		return nil, errors.New("building id is required")
 	}
 	if f.Name == "" {
@@ -87,7 +80,7 @@ func (s *Service) CreateFloor(f Floor) (*Floor, error) {
 	return s.floors[f.ID], nil
 }
 
-func (s *Service) ListFloorsByBuilding(buildingID string) []*Floor {
+func (s *Service) ListFloorsByBuilding(buildingID uint64) []*Floor {
 	items := make([]*Floor, 0)
 	for _, f := range s.floors {
 		if f.BuildingID == buildingID {
@@ -98,10 +91,10 @@ func (s *Service) ListFloorsByBuilding(buildingID string) []*Floor {
 }
 
 func (s *Service) CreateUnit(u Unit) (*Unit, error) {
-	if u.ID == "" {
-		u.ID = "unit-" + randomID()
+	if u.ID == 0 {
+		u.ID = uint64(len(s.units) + 1)
 	}
-	if u.BuildingID == "" {
+	if u.BuildingID == 0 {
 		return nil, errors.New("building id is required")
 	}
 	if u.Number == "" {
@@ -115,7 +108,7 @@ func (s *Service) CreateUnit(u Unit) (*Unit, error) {
 	return s.units[u.ID], nil
 }
 
-func (s *Service) ListUnitsByBuilding(buildingID string) []*Unit {
+func (s *Service) ListUnitsByBuilding(buildingID uint64) []*Unit {
 	items := make([]*Unit, 0)
 	for _, unit := range s.units {
 		if unit.BuildingID == buildingID {
@@ -125,7 +118,7 @@ func (s *Service) ListUnitsByBuilding(buildingID string) []*Unit {
 	return items
 }
 
-func (s *Service) GetUnit(id string) (*Unit, error) {
+func (s *Service) GetUnit(id uint64) (*Unit, error) {
 	unit, ok := s.units[id]
 	if !ok {
 		return nil, ErrUnitNotFound
@@ -134,8 +127,8 @@ func (s *Service) GetUnit(id string) (*Unit, error) {
 }
 
 func (s *Service) CreateTenant(t Tenant) (*Tenant, error) {
-	if t.ID == "" {
-		t.ID = "tenant-" + randomID()
+	if t.ID == 0 {
+		t.ID = uint64(len(s.tenants) + 1)
 	}
 	if t.Type == "" {
 		return nil, errors.New("tenant type is required")
@@ -148,10 +141,10 @@ func (s *Service) CreateTenant(t Tenant) (*Tenant, error) {
 	return s.tenants[t.ID], nil
 }
 
-func (s *Service) ListTenants(buildingID string) []*Tenant {
+func (s *Service) ListTenants(buildingID uint64) []*Tenant {
 	items := make([]*Tenant, 0, len(s.tenants))
 	for _, tenant := range s.tenants {
-		if buildingID != "" && !s.tenantInBuilding(tenant.ID, buildingID) {
+		if buildingID != 0 && !s.tenantInBuilding(tenant.ID, buildingID) {
 			continue
 		}
 		items = append(items, tenant)
@@ -159,7 +152,7 @@ func (s *Service) ListTenants(buildingID string) []*Tenant {
 	return items
 }
 
-func (s *Service) GetTenant(id string) (*Tenant, error) {
+func (s *Service) GetTenant(id uint64) (*Tenant, error) {
 	tenant, ok := s.tenants[id]
 	if !ok {
 		return nil, ErrTenantNotFound
@@ -168,13 +161,13 @@ func (s *Service) GetTenant(id string) (*Tenant, error) {
 }
 
 func (s *Service) CreateContract(c Contract) (*Contract, error) {
-	if c.ID == "" {
-		c.ID = "contract-" + randomID()
+	if c.ID == 0 {
+		c.ID = uint64(len(s.contracts) + 1)
 	}
-	if c.UnitID == "" {
+	if c.UnitID == 0 {
 		return nil, errors.New("unit id is required")
 	}
-	if c.TenantID == "" {
+	if c.TenantID == 0 {
 		return nil, errors.New("tenant id is required")
 	}
 	if c.ContractType == "" {
@@ -185,10 +178,10 @@ func (s *Service) CreateContract(c Contract) (*Contract, error) {
 	return s.contracts[c.ID], nil
 }
 
-func (s *Service) ListContracts(buildingID string) []*Contract {
+func (s *Service) ListContracts(buildingID uint64) []*Contract {
 	items := make([]*Contract, 0, len(s.contracts))
 	for _, contract := range s.contracts {
-		if buildingID != "" {
+		if buildingID != 0 {
 			unit, ok := s.units[contract.UnitID]
 			if !ok || unit.BuildingID != buildingID {
 				continue
@@ -199,7 +192,7 @@ func (s *Service) ListContracts(buildingID string) []*Contract {
 	return items
 }
 
-func (s *Service) GetContract(id string) (*Contract, error) {
+func (s *Service) GetContract(id uint64) (*Contract, error) {
 	contract, ok := s.contracts[id]
 	if !ok {
 		return nil, ErrContractNotFound
@@ -208,16 +201,16 @@ func (s *Service) GetContract(id string) (*Contract, error) {
 }
 
 func (s *Service) CreateDocument(document Document) (*Document, error) {
-	if document.ContractID == "" || document.Name == "" || document.Path == "" {
+	if document.ContractID == 0 || document.Name == "" || document.Path == "" {
 		return nil, errors.New("contract id, document name, and path are required")
 	}
-	document.ID = "doc-" + randomID()
+	document.ID = uint64(len(s.documents) + 1)
 	document.CreatedAt = time.Now()
 	s.documents[document.ID] = &document
 	return s.documents[document.ID], nil
 }
 
-func (s *Service) ListDocumentsByContract(contractID string) []*Document {
+func (s *Service) ListDocumentsByContract(contractID uint64) []*Document {
 	items := make([]*Document, 0)
 	for _, document := range s.documents {
 		if document.ContractID == contractID {
@@ -228,16 +221,16 @@ func (s *Service) ListDocumentsByContract(contractID string) []*Document {
 }
 
 func (s *Service) CreateInvoice(i Invoice) (*Invoice, error) {
-	if i.ID == "" {
-		i.ID = "invoice-" + randomID()
+	if i.ID == 0 {
+		i.ID = uint64(len(s.invoices) + 1)
 	}
-	if i.ContractID == "" {
+	if i.ContractID == 0 {
 		return nil, errors.New("contract id is required")
 	}
-	if i.TenantID == "" {
+	if i.TenantID == 0 {
 		return nil, errors.New("tenant id is required")
 	}
-	if i.UnitID == "" {
+	if i.UnitID == 0 {
 		return nil, errors.New("unit id is required")
 	}
 	if i.Number == "" {
@@ -248,10 +241,10 @@ func (s *Service) CreateInvoice(i Invoice) (*Invoice, error) {
 	return s.invoices[i.ID], nil
 }
 
-func (s *Service) ListInvoices(buildingID string) []*Invoice {
+func (s *Service) ListInvoices(buildingID uint64) []*Invoice {
 	items := make([]*Invoice, 0, len(s.invoices))
 	for _, invoice := range s.invoices {
-		if buildingID != "" && invoice.BuildingID != buildingID {
+		if buildingID != 0 && invoice.BuildingID != buildingID {
 			continue
 		}
 		items = append(items, invoice)
@@ -260,19 +253,19 @@ func (s *Service) ListInvoices(buildingID string) []*Invoice {
 }
 
 func (s *Service) CreatePayment(payment Payment) (*Payment, error) {
-	if payment.InvoiceID == "" || payment.PaymentReference == "" || payment.Amount <= 0 || payment.PaymentMethod == "" {
+	if payment.InvoiceID == 0 || payment.PaymentReference == "" || payment.Amount <= 0 || payment.PaymentMethod == "" {
 		return nil, errors.New("invoice, payment reference, amount, and payment method are required")
 	}
-	payment.ID = "payment-" + randomID()
+	payment.ID = uint64(len(s.payments) + 1)
 	payment.CreatedAt = time.Now()
 	s.payments[payment.ID] = &payment
 	return s.payments[payment.ID], nil
 }
 
-func (s *Service) ListPayments(buildingID string) []*Payment {
+func (s *Service) ListPayments(buildingID uint64) []*Payment {
 	items := make([]*Payment, 0, len(s.payments))
 	for _, payment := range s.payments {
-		if buildingID != "" && payment.BuildingID != buildingID {
+		if buildingID != 0 && payment.BuildingID != buildingID {
 			continue
 		}
 		items = append(items, payment)
@@ -280,9 +273,9 @@ func (s *Service) ListPayments(buildingID string) []*Payment {
 	return items
 }
 
-func (s *Service) DashboardSummary(buildingID string) DashboardSummary {
+func (s *Service) DashboardSummary(buildingID uint64) DashboardSummary {
 	summary := DashboardSummary{}
-	if buildingID == "" {
+	if buildingID == 0 {
 		summary.Buildings, summary.Floors, summary.Units = len(s.buildings), len(s.floors), len(s.units)
 		summary.Tenants, summary.Contracts, summary.Invoices = len(s.tenants), len(s.contracts), len(s.invoices)
 		return summary
@@ -318,7 +311,7 @@ func (s *Service) DashboardSummary(buildingID string) DashboardSummary {
 	return summary
 }
 
-func (s *Service) tenantInBuilding(tenantID string, buildingID string) bool {
+func (s *Service) tenantInBuilding(tenantID uint64, buildingID uint64) bool {
 	for _, contract := range s.contracts {
 		if contract.TenantID == tenantID {
 			if unit, ok := s.units[contract.UnitID]; ok && unit.BuildingID == buildingID {
@@ -327,12 +320,4 @@ func (s *Service) tenantInBuilding(tenantID string, buildingID string) bool {
 		}
 	}
 	return false
-}
-
-func randomID() string {
-	bytes := make([]byte, 8)
-	if _, err := rand.Read(bytes); err != nil {
-		return hex.EncodeToString([]byte(time.Now().Format("150405.000000000")))[:16]
-	}
-	return hex.EncodeToString(bytes)
 }

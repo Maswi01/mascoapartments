@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -34,12 +33,12 @@ func (s *MySQLService) CreateBuilding(building Building) (*Building, error) {
 	return &building, nil
 }
 
-func databaseID(result sql.Result) (string, error) {
+func databaseID(result sql.Result) (uint64, error) {
 	id, err := result.LastInsertId()
 	if err != nil {
-		return "", err
+		return 0, err
 	}
-	return strconv.FormatInt(id, 10), nil
+	return uint64(id), nil
 }
 
 func (s *MySQLService) ListBuildings() []*Building {
@@ -59,20 +58,23 @@ func (s *MySQLService) ListBuildings() []*Building {
 }
 
 func (s *MySQLService) CreateFloor(floor Floor) (*Floor, error) {
-	if floor.BuildingID == "" || floor.Name == "" {
+	if floor.BuildingID == 0 || floor.Name == "" {
 		return nil, errors.New("building id and floor name are required")
 	}
-	floor.ID = "floor-" + randomID()
 	floor.CreatedAt = time.Now()
 	floor.UpdatedAt = floor.CreatedAt
-	_, err := s.db.Exec(`INSERT INTO floors (id, building_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, floor.ID, floor.BuildingID, floor.Name, floor.Description, floor.CreatedAt, floor.UpdatedAt)
+	result, err := s.db.Exec(`INSERT INTO floors (building_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, floor.BuildingID, floor.Name, floor.Description, floor.CreatedAt, floor.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("save floor: %w", err)
+	}
+	floor.ID, err = databaseID(result)
+	if err != nil {
+		return nil, fmt.Errorf("read floor id: %w", err)
 	}
 	return &floor, nil
 }
 
-func (s *MySQLService) ListFloorsByBuilding(buildingID string) []*Floor {
+func (s *MySQLService) ListFloorsByBuilding(buildingID uint64) []*Floor {
 	rows, err := s.db.Query(`SELECT id, building_id, name, description, created_at, updated_at FROM floors WHERE building_id = ? ORDER BY created_at`, buildingID)
 	if err != nil {
 		return []*Floor{}
@@ -89,7 +91,7 @@ func (s *MySQLService) ListFloorsByBuilding(buildingID string) []*Floor {
 }
 
 func (s *MySQLService) CreateUnit(unit Unit) (*Unit, error) {
-	if unit.BuildingID == "" || unit.Number == "" || unit.Type == "" {
+	if unit.BuildingID == 0 || unit.Number == "" || unit.Type == "" {
 		return nil, errors.New("building id, unit number, and unit type are required")
 	}
 	unit.CreatedAt = time.Now()
@@ -105,7 +107,7 @@ func (s *MySQLService) CreateUnit(unit Unit) (*Unit, error) {
 	return &unit, nil
 }
 
-func (s *MySQLService) ListUnitsByBuilding(buildingID string) []*Unit {
+func (s *MySQLService) ListUnitsByBuilding(buildingID uint64) []*Unit {
 	rows, err := s.db.Query(`SELECT id, building_id, COALESCE(floor_id, ''), unit_number, unit_type, description, bedrooms, bathrooms, approximate_size, status, created_at, updated_at FROM units WHERE building_id = ? ORDER BY unit_number`, buildingID)
 	if err != nil {
 		return []*Unit{}
@@ -121,7 +123,7 @@ func (s *MySQLService) ListUnitsByBuilding(buildingID string) []*Unit {
 	return items
 }
 
-func (s *MySQLService) GetUnit(id string) (*Unit, error) {
+func (s *MySQLService) GetUnit(id uint64) (*Unit, error) {
 	unit := &Unit{}
 	err := s.db.QueryRow(`SELECT id, building_id, COALESCE(floor_id, ''), unit_number, unit_type, description, bedrooms, bathrooms, approximate_size, status, created_at, updated_at FROM units WHERE id = ?`, id).Scan(&unit.ID, &unit.BuildingID, &unit.FloorID, &unit.Number, &unit.Type, &unit.Description, &unit.Bedrooms, &unit.Bathrooms, &unit.Size, &unit.Status, &unit.CreatedAt, &unit.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -137,20 +139,23 @@ func (s *MySQLService) CreateTenant(tenant Tenant) (*Tenant, error) {
 	if tenant.Type == "" || (tenant.FullName == "" && tenant.CompanyName == "") {
 		return nil, errors.New("tenant type and name are required")
 	}
-	tenant.ID = "tenant-" + randomID()
 	tenant.CreatedAt = time.Now()
 	tenant.UpdatedAt = tenant.CreatedAt
-	_, err := s.db.Exec(`INSERT INTO tenants (id, type, full_name, company_name, contact_person, phone, email, address, id_number, registration_ref, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, tenant.ID, tenant.Type, tenant.FullName, tenant.CompanyName, tenant.ContactPerson, tenant.Phone, tenant.Email, tenant.Address, tenant.IDNumber, tenant.RegistrationRef, tenant.Notes, tenant.CreatedAt, tenant.UpdatedAt)
+	result, err := s.db.Exec(`INSERT INTO tenants (tenant_type, full_name, company_name, contact_person, phone, email, address, id_number, registration_reference, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, tenant.Type, tenant.FullName, tenant.CompanyName, tenant.ContactPerson, tenant.Phone, tenant.Email, tenant.Address, tenant.IDNumber, tenant.RegistrationRef, tenant.Notes, tenant.CreatedAt, tenant.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("save tenant: %w", err)
+	}
+	tenant.ID, err = databaseID(result)
+	if err != nil {
+		return nil, fmt.Errorf("read tenant id: %w", err)
 	}
 	return &tenant, nil
 }
 
-func (s *MySQLService) ListTenants(buildingID string) []*Tenant {
-	query := `SELECT DISTINCT t.id, t.type, t.full_name, t.company_name, t.contact_person, t.phone, t.email, t.address, t.id_number, t.registration_ref, t.notes, t.created_at, t.updated_at FROM tenants t LEFT JOIN contracts c ON c.tenant_id = t.id LEFT JOIN units u ON u.id = c.unit_id`
+func (s *MySQLService) ListTenants(buildingID uint64) []*Tenant {
+	query := `SELECT DISTINCT t.id, t.tenant_type, t.full_name, t.company_name, t.contact_person, t.phone, t.email, t.address, t.id_number, t.registration_reference, t.notes, t.created_at, t.updated_at FROM tenants t LEFT JOIN contracts c ON c.tenant_id = t.id LEFT JOIN units u ON u.id = c.unit_id`
 	args := []interface{}{}
-	if buildingID != "" {
+	if buildingID != 0 {
 		query += ` WHERE u.building_id = ?`
 		args = append(args, buildingID)
 	}
@@ -170,9 +175,9 @@ func (s *MySQLService) ListTenants(buildingID string) []*Tenant {
 	return items
 }
 
-func (s *MySQLService) GetTenant(id string) (*Tenant, error) {
+func (s *MySQLService) GetTenant(id uint64) (*Tenant, error) {
 	tenant := &Tenant{}
-	err := s.db.QueryRow(`SELECT id, type, full_name, company_name, contact_person, phone, email, address, id_number, registration_ref, notes, created_at, updated_at FROM tenants WHERE id = ?`, id).Scan(&tenant.ID, &tenant.Type, &tenant.FullName, &tenant.CompanyName, &tenant.ContactPerson, &tenant.Phone, &tenant.Email, &tenant.Address, &tenant.IDNumber, &tenant.RegistrationRef, &tenant.Notes, &tenant.CreatedAt, &tenant.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, tenant_type, full_name, company_name, contact_person, phone, email, address, id_number, registration_reference, notes, created_at, updated_at FROM tenants WHERE id = ?`, id).Scan(&tenant.ID, &tenant.Type, &tenant.FullName, &tenant.CompanyName, &tenant.ContactPerson, &tenant.Phone, &tenant.Email, &tenant.Address, &tenant.IDNumber, &tenant.RegistrationRef, &tenant.Notes, &tenant.CreatedAt, &tenant.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTenantNotFound
 	}
@@ -183,23 +188,26 @@ func (s *MySQLService) GetTenant(id string) (*Tenant, error) {
 }
 
 func (s *MySQLService) CreateContract(contract Contract) (*Contract, error) {
-	if contract.UnitID == "" || contract.TenantID == "" || contract.ContractType == "" {
+	if contract.UnitID == 0 || contract.TenantID == 0 || contract.ContractType == "" {
 		return nil, errors.New("unit id, tenant id, and contract type are required")
 	}
-	contract.ID = "contract-" + randomID()
 	contract.CreatedAt = time.Now()
 	contract.UpdatedAt = contract.CreatedAt
-	_, err := s.db.Exec(`INSERT INTO contracts (id, unit_id, tenant_id, contract_type, start_date, end_date, monthly_rent, payment_method, payment_frequency, utility_responsibility, terms, status, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?)`, contract.ID, contract.UnitID, contract.TenantID, contract.ContractType, contract.StartDate, contract.EndDate, contract.MonthlyRent, contract.PaymentMethod, contract.PaymentFrequency, contract.UtilityResponsibility, contract.Terms, contract.Status, contract.Notes, contract.CreatedAt, contract.UpdatedAt)
+	result, err := s.db.Exec(`INSERT INTO contracts (unit_id, tenant_id, contract_type, start_date, end_date, monthly_rent, payment_method, payment_frequency, utility_responsibility, terms, status, notes, created_at, updated_at) VALUES (?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?)`, contract.UnitID, contract.TenantID, contract.ContractType, contract.StartDate, contract.EndDate, contract.MonthlyRent, contract.PaymentMethod, contract.PaymentFrequency, contract.UtilityResponsibility, contract.Terms, contract.Status, contract.Notes, contract.CreatedAt, contract.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("save contract: %w", err)
+	}
+	contract.ID, err = databaseID(result)
+	if err != nil {
+		return nil, fmt.Errorf("read contract id: %w", err)
 	}
 	return &contract, nil
 }
 
-func (s *MySQLService) ListContracts(buildingID string) []*Contract {
+func (s *MySQLService) ListContracts(buildingID uint64) []*Contract {
 	query := `SELECT c.id, c.unit_id, c.tenant_id, c.contract_type, c.start_date, COALESCE(c.end_date, ''), c.monthly_rent, c.payment_method, c.payment_frequency, c.utility_responsibility, COALESCE(c.terms, ''), c.status, c.notes, c.created_at, c.updated_at FROM contracts c JOIN units u ON u.id = c.unit_id`
 	args := []interface{}{}
-	if buildingID != "" {
+	if buildingID != 0 {
 		query += ` WHERE u.building_id = ?`
 		args = append(args, buildingID)
 	}
@@ -219,7 +227,7 @@ func (s *MySQLService) ListContracts(buildingID string) []*Contract {
 	return items
 }
 
-func (s *MySQLService) GetContract(id string) (*Contract, error) {
+func (s *MySQLService) GetContract(id uint64) (*Contract, error) {
 	contract := &Contract{}
 	err := s.db.QueryRow(`SELECT id, unit_id, tenant_id, contract_type, start_date, COALESCE(end_date, ''), monthly_rent, payment_method, payment_frequency, utility_responsibility, COALESCE(terms, ''), status, notes, created_at, updated_at FROM contracts WHERE id = ?`, id).Scan(&contract.ID, &contract.UnitID, &contract.TenantID, &contract.ContractType, &contract.StartDate, &contract.EndDate, &contract.MonthlyRent, &contract.PaymentMethod, &contract.PaymentFrequency, &contract.UtilityResponsibility, &contract.Terms, &contract.Status, &contract.Notes, &contract.CreatedAt, &contract.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -232,19 +240,22 @@ func (s *MySQLService) GetContract(id string) (*Contract, error) {
 }
 
 func (s *MySQLService) CreateDocument(document Document) (*Document, error) {
-	if document.ContractID == "" || document.Name == "" || document.Path == "" {
+	if document.ContractID == 0 || document.Name == "" || document.Path == "" {
 		return nil, errors.New("contract id, document name, and path are required")
 	}
-	document.ID = "doc-" + randomID()
 	document.CreatedAt = time.Now()
-	_, err := s.db.Exec(`INSERT INTO documents (id, contract_id, name, original_name, path, mime_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, document.ID, document.ContractID, document.Name, document.OriginalName, document.Path, document.MimeType, document.CreatedAt)
+	result, err := s.db.Exec(`INSERT INTO documents (contract_id, name, original_name, path, mime_type, created_at) VALUES (?, ?, ?, ?, ?, ?)`, document.ContractID, document.Name, document.OriginalName, document.Path, document.MimeType, document.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("save document: %w", err)
+	}
+	document.ID, err = databaseID(result)
+	if err != nil {
+		return nil, fmt.Errorf("read document id: %w", err)
 	}
 	return &document, nil
 }
 
-func (s *MySQLService) ListDocumentsByContract(contractID string) []*Document {
+func (s *MySQLService) ListDocumentsByContract(contractID uint64) []*Document {
 	rows, err := s.db.Query(`SELECT id, contract_id, name, original_name, path, mime_type, created_at FROM documents WHERE contract_id = ? ORDER BY created_at DESC`, contractID)
 	if err != nil {
 		return []*Document{}
@@ -261,7 +272,7 @@ func (s *MySQLService) ListDocumentsByContract(contractID string) []*Document {
 }
 
 func (s *MySQLService) CreateInvoice(invoice Invoice) (*Invoice, error) {
-	if invoice.ContractID == "" || invoice.TenantID == "" || invoice.UnitID == "" || invoice.Number == "" {
+	if invoice.ContractID == 0 || invoice.TenantID == 0 || invoice.UnitID == 0 || invoice.Number == "" {
 		return nil, errors.New("contract id, tenant id, unit id, and invoice number are required")
 	}
 	invoice.CreatedAt = time.Now()
@@ -277,10 +288,10 @@ func (s *MySQLService) CreateInvoice(invoice Invoice) (*Invoice, error) {
 	return &invoice, nil
 }
 
-func (s *MySQLService) ListInvoices(buildingID string) []*Invoice {
+func (s *MySQLService) ListInvoices(buildingID uint64) []*Invoice {
 	query := `SELECT id, contract_id, tenant_id, building_id, unit_id, invoice_number, issue_date, due_date, amount, description, status, created_at, updated_at FROM invoices`
 	args := []interface{}{}
-	if buildingID != "" {
+	if buildingID != 0 {
 		query += ` WHERE building_id = ?`
 		args = append(args, buildingID)
 	}
@@ -301,7 +312,7 @@ func (s *MySQLService) ListInvoices(buildingID string) []*Invoice {
 }
 
 func (s *MySQLService) CreatePayment(payment Payment) (*Payment, error) {
-	if payment.InvoiceID == "" || payment.PaymentReference == "" || payment.Amount <= 0 || payment.PaymentMethod == "" {
+	if payment.InvoiceID == 0 || payment.PaymentReference == "" || payment.Amount <= 0 || payment.PaymentMethod == "" {
 		return nil, errors.New("invoice, payment reference, amount, and payment method are required")
 	}
 	var invoice Invoice
@@ -337,10 +348,10 @@ func (s *MySQLService) CreatePayment(payment Payment) (*Payment, error) {
 	return &payment, nil
 }
 
-func (s *MySQLService) ListPayments(buildingID string) []*Payment {
+func (s *MySQLService) ListPayments(buildingID uint64) []*Payment {
 	query := `SELECT p.id, p.tenant_id, p.invoice_id, p.building_id, p.unit_id, p.payment_reference, p.amount, p.payment_date, pm.name, COALESCE(p.receipt_number, ''), COALESCE(p.notes, ''), p.created_at FROM payments p JOIN payment_methods pm ON pm.id = p.payment_method_id`
 	args := []interface{}{}
-	if buildingID != "" {
+	if buildingID != 0 {
 		query += ` WHERE p.building_id = ?`
 		args = append(args, buildingID)
 	}
@@ -360,7 +371,7 @@ func (s *MySQLService) ListPayments(buildingID string) []*Payment {
 	return items
 }
 
-func (s *MySQLService) DashboardSummary(buildingID string) DashboardSummary {
+func (s *MySQLService) DashboardSummary(buildingID uint64) DashboardSummary {
 	summary := DashboardSummary{}
 	for _, counter := range []struct {
 		table       string
@@ -368,7 +379,7 @@ func (s *MySQLService) DashboardSummary(buildingID string) DashboardSummary {
 	}{{"buildings", &summary.Buildings}, {"floors", &summary.Floors}, {"units", &summary.Units}, {"tenants", &summary.Tenants}, {"contracts", &summary.Contracts}, {"invoices", &summary.Invoices}} {
 		query := "SELECT COUNT(*) FROM " + counter.table
 		args := []interface{}{}
-		if buildingID != "" {
+		if buildingID != 0 {
 			if counter.table == "buildings" {
 				query += " WHERE id = ?"
 			} else if counter.table == "tenants" {
