@@ -3,7 +3,7 @@ import Swal from 'sweetalert2'
 import heroImage from './assets/hero.png'
 import './App.css'
 
-const apiURL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'
+const apiURL = import.meta.env.VITE_API_URL ?? 'http://localhost:6400/api/v1'
 
 const defaultForm = {
   name: '',
@@ -135,7 +135,7 @@ type Session = {
 }
 
 type AdminUser = { id: number; username: string; email: string; full_name: string; status: string; roles: string[] }
-type View = 'hq' | 'buildings' | 'units' | 'tenants' | 'contracts' | 'invoices' | 'payments' | 'registration' | 'reports' | 'settings'
+type View = 'home' | 'buildings' | 'units' | 'tenants' | 'contracts' | 'invoices' | 'payments' | 'registration' | 'reports' | 'settings'
 
 function App() {
   const [session, setSession] = useState<Session | null>(() => {
@@ -160,7 +160,7 @@ function App() {
   const [documentContractID, setDocumentContractID] = useState('')
   const [documentName, setDocumentName] = useState('')
   const [documentFile, setDocumentFile] = useState<File | null>(null)
-  const [view, setView] = useState<View>('hq')
+  const [view, setView] = useState<View>('home')
   const [selectedBuildingID, setSelectedBuildingID] = useState(() => localStorage.getItem('masco-building-id') ?? 'hq')
   const [formError, setFormError] = useState('')
   const [profileForm, setProfileForm] = useState({ full_name: session?.user.full_name ?? '', email: '' })
@@ -330,7 +330,7 @@ function App() {
     if (response.ok) {
       await loadData()
       setForm(defaultForm)
-      setView('hq')
+      setView('home')
       void showSuccess('Building saved')
     } else {
       const error = await response.json().catch(() => ({ error: 'Could not save building.' })) as { error?: string }
@@ -528,7 +528,7 @@ function App() {
 
   const selectedBuilding = buildings.find((building) => building.id === selectedBuildingID)
   const pageTitle: Record<View, string> = {
-    hq: 'HQ overview',
+    home: selectedBuildingID === 'hq' ? 'Home' : 'Branch home',
     buildings: 'Buildings',
     units: 'Units',
     tenants: 'Tenants',
@@ -564,7 +564,7 @@ function App() {
 
   const switchBuilding = (buildingID: string) => {
     setSelectedBuildingID(buildingID)
-    setView('hq')
+    setView('home')
   }
 
   return (
@@ -573,7 +573,7 @@ function App() {
         <div className="brand"><span className="brand-mark">M</span><span>Masco<span className="brand-muted">Rent</span></span></div>
         <p className="user-name">{session.user.full_name}</p>
         <nav className="nav">
-          <button className={`nav-link ${view === 'hq' ? 'active' : ''}`} onClick={() => showView('hq')}>HQ overview</button>
+          <button className={`nav-link ${view === 'home' ? 'active' : ''}`} onClick={() => showView('home')}>Home</button>
           {selectedBuildingID === 'hq' ? <>
             <button className={`nav-link ${view === 'registration' ? 'active' : ''}`} onClick={() => showView('registration')}>Registration</button>
             <button className={`nav-link ${view === 'reports' ? 'active' : ''}`} onClick={() => showView('reports')}>Reports</button>
@@ -604,8 +604,8 @@ function App() {
           </label>
         </header>
 
-        {view === 'hq' && <>
-        <div className="dashboard-heading"><div><p className="eyebrow">{selectedBuilding ? 'Branch operations' : 'Administration'}</p><h2>{selectedBuilding ? `OWNER UPDATES - ${selectedBuilding.code}` : 'OWNER UPDATES - ALL BUILDINGS'}</h2></div><span className="updated-date">Updated: {today.toLocaleDateString('en-GB')}</span></div>
+        {view === 'home' && <>
+        <div className="dashboard-heading"><div><p className="eyebrow">{selectedBuilding ? 'Branch dashboard' : 'HQ / Administration'}</p><h2>{selectedBuilding ? `OWNER UPDATES - ${selectedBuilding.code}` : 'ADMINISTRATION OWNER UPDATES - ALL BUILDINGS'}</h2></div><span className="updated-date">Updated: {today.toLocaleDateString('en-GB')}</span></div>
         <div className="stats-grid dashboard-stats">
           <div className="stat-card"><span>Active contracts</span><strong>{activeContracts.length}</strong></div>
           <div className="stat-card"><span>Expiring 7 days</span><strong>{expiring7.length}</strong></div>
@@ -614,7 +614,7 @@ function App() {
           <div className="stat-card"><span>Unpaid active</span><strong>{unpaidInvoices.length}</strong></div>
           <div className="stat-card"><span>Payments today</span><strong>{paymentsToday.length}</strong></div>
         </div>
-        {!selectedBuilding && <div className="branch-grid">{branchCards.map((branch) => <button className="branch-card" key={branch.building.id} onClick={() => switchBuilding(String(branch.building.id))}><span>BRANCH: {branch.building.code}</span><strong>{branch.active} active</strong><small>{branch.expired} expired · {branch.unpaid} unpaid</small></button>)}</div>}
+        {!selectedBuilding && <><p className="dashboard-mode-note">All buildings combined. Choose a branch above to open its isolated workspace.</p><div className="branch-grid">{branchCards.map((branch) => <button className="branch-card" key={branch.building.id} onClick={() => switchBuilding(String(branch.building.id))}><span>BRANCH: {branch.building.code}</span><strong>{branch.active} active</strong><small>{branch.expired} expired · {branch.unpaid} unpaid</small></button>)}</div></>}
         {selectedBuilding && <div className="dashboard-columns">
           <div className="panel table-panel"><div className="section-heading"><h2>Contracts to expire</h2><span>Next 30 days</span></div>{expiring30.length === 0 ? <p className="empty-state">No contracts expiring in next 30 days.</p> : expiring30.map((contract) => <div className="dashboard-row" key={contract.id}><strong>{contract.tenant_id}</strong><span>{contract.unit_id}</span><span>{contract.end_date}</span><button className="row-action" onClick={() => showView('contracts')}>View / Pay</button></div>)}</div>
           <div className="panel table-panel"><div className="section-heading"><h2>Expired contracts</h2><span>{expiredContracts.length} records</span></div>{expiredContracts.length === 0 ? <p className="empty-state">No expired contracts.</p> : expiredContracts.map((contract) => <div className="dashboard-row" key={contract.id}><strong>{contract.tenant_id}</strong><span>{contract.unit_id}</span><span>{contract.end_date}</span><button className="row-action" onClick={() => showView('contracts')}>View</button></div>)}</div>
