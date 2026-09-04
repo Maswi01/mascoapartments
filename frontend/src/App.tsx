@@ -172,6 +172,7 @@ function App() {
   const [unitFloorFilter, setUnitFloorFilter] = useState('All')
   const [unitPage, setUnitPage] = useState(1)
   const [unitPageSize, setUnitPageSize] = useState(10)
+  const [unitPageMode, setUnitPageMode] = useState<'list' | 'create'>('list')
   const [contractForm, setContractForm] = useState(defaultContractForm)
   const [paymentForm, setPaymentForm] = useState(defaultPaymentForm)
   const [documentContractID, setDocumentContractID] = useState('')
@@ -335,6 +336,7 @@ function App() {
     const data = await payload.json()
     setUnits(data.data ?? [])
     setUnitRows([{ ...defaultUnitForm }])
+    setUnitPageMode('list')
     void showSuccess('Unit saved')
   }
 
@@ -758,12 +760,13 @@ function App() {
         }
 
         {view === 'units' && <div className="panel-grid">
-          <form className="panel form-panel" onSubmit={handleUnitSubmit}>
-            <div className="section-heading"><h2>Add units</h2><button className="secondary-button" type="button" onClick={addUnitRow}>+ Add row</button></div>
+          {unitPageMode === 'list' && <button className="secondary-button units-add-button" type="button" onClick={() => setUnitPageMode('create')}>+ Add unit(s)</button>}
+          {unitPageMode === 'create' && <form className="panel form-panel" onSubmit={handleUnitSubmit}>
+            <div className="section-heading"><h2>Add units</h2><div><button className="secondary-button" type="button" onClick={addUnitRow}>+ Add row</button><button className="secondary-button" type="button" onClick={() => setUnitPageMode('list')}>Back to list</button></div></div>
             <p className="empty-state">{selectedBuilding ? `Adding to ${selectedBuilding.name}` : 'Select a building above before adding a unit.'}</p>
             <div className="unit-entry-list">{unitRows.map((row, rowIndex) => <div className="unit-entry-row" key={rowIndex}><input value={row.number} onChange={(event) => updateUnitRow(rowIndex, 'number', event.target.value)} placeholder="Unit no." required /><select value={row.floor_id} onChange={(event) => updateUnitRow(rowIndex, 'floor_id', event.target.value)}><option value="">Floor</option>{floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}</select><select value={row.type} onChange={(event) => updateUnitRow(rowIndex, 'type', event.target.value)}><option>Residential</option><option>Commercial</option><option>Service</option></select><input inputMode="decimal" value={row.base_rent} onChange={(event) => updateUnitRow(rowIndex, 'base_rent', formatAmount(event.target.value))} placeholder="Required rent" required /><button className="remove-row" type="button" onClick={() => removeUnitRow(rowIndex)} aria-label="Remove row">×</button></div>)}</div>
             <button className="primary-button" type="submit">Save unit</button>
-          </form>
+          </form>}
           <div className="panel list-panel"><div className="section-heading"><h2>{selectedBuilding ? `${selectedBuilding.name} units` : 'Units'}</h2><span>{filteredUnits.length} entries</span></div>{selectedBuildingID === 'hq' ? <p className="empty-state">Choose a building to see its units.</p> : <><div className="unit-toolbar"><input value={unitSearch} onChange={(event) => { setUnitSearch(event.target.value); setUnitPage(1) }} placeholder="Search room number" /><select value={unitFloorFilter} onChange={(event) => { setUnitFloorFilter(event.target.value); setUnitPage(1) }}><option value="All">All floors</option>{floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}</select><select value={unitTypeFilter} onChange={(event) => { setUnitTypeFilter(event.target.value); setUnitPage(1) }}><option>All</option><option>Residential</option><option>Commercial</option><option>Service</option></select><select value={unitStatusFilter} onChange={(event) => { setUnitStatusFilter(event.target.value); setUnitPage(1) }}><option>All</option><option>Vacant</option><option>Occupied</option><option>Reserved</option><option>Maintenance</option></select><select value={unitPageSize} onChange={(event) => { setUnitPageSize(Number(event.target.value)); setUnitPage(1) }}><option value="10">10 entries</option><option value="25">25 entries</option><option value="50">50 entries</option></select></div><div className="unit-table-wrap"><table className="unit-table"><thead><tr><th>No.</th><th>Room No.</th><th>Floor</th><th>Type</th><th>Required rent</th><th>Status</th></tr></thead><tbody>{visibleUnits.length === 0 ? <tr><td colSpan={6}>No units match these filters.</td></tr> : visibleUnits.map((unit, index) => <tr key={unit.id}><td>{(unitPage - 1) * unitPageSize + index + 1}</td><td>{unit.number}</td><td>{floors.find((floor) => String(floor.id) === String(unit.floor_id))?.name || '-'}</td><td><span className="code-tag">{unit.type}</span></td><td>{formatAmount(unit.base_rent)}</td><td><span className={`table-status ${unit.status.toLowerCase()}`}>{unit.status}</span></td></tr>)}</tbody></table></div><div className="pagination"><span>Showing {visibleUnits.length ? (unitPage - 1) * unitPageSize + 1 : 0} to {Math.min(unitPage * unitPageSize, filteredUnits.length)} of {filteredUnits.length}</span><div><button type="button" disabled={unitPage === 1} onClick={() => setUnitPage((page) => page - 1)}>Previous</button><strong>{unitPage}</strong><button type="button" disabled={unitPage >= unitPageCount} onClick={() => setUnitPage((page) => page + 1)}>Next</button></div></div></>}</div>
         </div>}
 
