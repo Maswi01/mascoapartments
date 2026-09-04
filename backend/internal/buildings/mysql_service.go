@@ -151,6 +151,21 @@ func (s *MySQLService) GetUnit(id uint64) (*Unit, error) {
 	return unit, nil
 }
 
+func (s *MySQLService) UpdateUnit(unit Unit) (*Unit, error) {
+	if unit.ID == 0 || unit.Number == "" || unit.Type == "" { return nil, errors.New("unit id, number, and type are required") }
+	_, err := s.db.Exec(`UPDATE units SET floor_id = NULLIF(?, 0), unit_number = ?, unit_type = ?, description = ?, base_rent = ?, updated_at = ? WHERE id = ?`, unit.FloorID, unit.Number, unit.Type, unit.Description, unit.BaseRent, time.Now(), unit.ID)
+	if err != nil { return nil, fmt.Errorf("update unit: %w", err) }
+	return s.GetUnit(unit.ID)
+}
+
+func (s *MySQLService) DeleteUnit(id uint64) error {
+	result, err := s.db.Exec(`DELETE FROM units WHERE id = ?`, id)
+	if err != nil { return fmt.Errorf("delete unit: %w", err) }
+	count, err := result.RowsAffected()
+	if err != nil || count == 0 { return ErrUnitNotFound }
+	return nil
+}
+
 func (s *MySQLService) CreateTenant(tenant Tenant) (*Tenant, error) {
 	if tenant.BuildingID == 0 || tenant.Type == "" || (tenant.FullName == "" && tenant.CompanyName == "") {
 		return nil, errors.New("building, tenant type, and name are required")

@@ -24,6 +24,8 @@ type ServiceAPI interface {
 	CreateUnit(Unit) (*Unit, error)
 	ListUnitsByBuilding(uint64) []*Unit
 	GetUnit(uint64) (*Unit, error)
+	UpdateUnit(Unit) (*Unit, error)
+	DeleteUnit(uint64) error
 	CreateTenant(Tenant) (*Tenant, error)
 	ListTenants(uint64) []*Tenant
 	GetTenant(uint64) (*Tenant, error)
@@ -51,6 +53,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/buildings/{id}/floors", h.createFloor)
 	mux.HandleFunc("GET /api/v1/buildings/{id}/units", h.listUnits)
 	mux.HandleFunc("POST /api/v1/buildings/{id}/units", h.createUnit)
+	mux.HandleFunc("PUT /api/v1/units/{id}", h.updateUnit)
+	mux.HandleFunc("DELETE /api/v1/units/{id}", h.deleteUnit)
 	mux.HandleFunc("GET /api/v1/tenants", h.listTenants)
 	mux.HandleFunc("POST /api/v1/tenants", h.createTenant)
 	mux.HandleFunc("GET /api/v1/contracts", h.listContracts)
@@ -157,6 +161,25 @@ func (h *Handler) createUnit(writer http.ResponseWriter, request *http.Request) 
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusCreated)
 	json.NewEncoder(writer).Encode(created)
+}
+
+func (h *Handler) updateUnit(writer http.ResponseWriter, request *http.Request) {
+	id, ok := pathID(request)
+	if !ok { writeJSONError(writer, http.StatusBadRequest, "invalid unit id"); return }
+	var unit Unit
+	if err := json.NewDecoder(request.Body).Decode(&unit); err != nil { writeJSONError(writer, http.StatusBadRequest, "invalid unit payload"); return }
+	unit.ID = id
+	updated, err := h.service.UpdateUnit(unit)
+	if err != nil { writeJSONError(writer, http.StatusBadRequest, err.Error()); return }
+	writer.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(writer).Encode(updated)
+}
+
+func (h *Handler) deleteUnit(writer http.ResponseWriter, request *http.Request) {
+	id, ok := pathID(request)
+	if !ok { writeJSONError(writer, http.StatusBadRequest, "invalid unit id"); return }
+	if err := h.service.DeleteUnit(id); err != nil { writeJSONError(writer, http.StatusBadRequest, err.Error()); return }
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) listTenants(writer http.ResponseWriter, request *http.Request) {

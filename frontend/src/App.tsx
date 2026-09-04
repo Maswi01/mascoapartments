@@ -596,6 +596,10 @@ function App() {
   const unpaidInvoices = scopedInvoices.filter((invoice) => invoice.status === 'Pending' || invoice.status === 'Partially Paid' || invoice.status === 'Overdue')
   const scopedPayments = payments.filter((payment) => selectedBuildingID === 'hq' || payment.building_id === Number(selectedBuildingID))
   const paymentsToday = scopedPayments.filter((payment) => payment.payment_date === today.toISOString().slice(0, 10))
+  const totalContractRent = activeContracts.reduce((total, contract) => total + contract.monthly_rent, 0)
+  const totalInvoiced = scopedInvoices.reduce((total, invoice) => total + invoice.amount, 0)
+  const totalPaid = scopedPayments.reduce((total, payment) => total + payment.amount, 0)
+  const totalOutstanding = Math.max(0, totalInvoiced - totalPaid)
   const branchCards = buildings.map((building) => {
     const branchContracts = contracts.filter((contract) => String(contract.building_id) === String(building.id))
     const branchInvoices = invoices.filter((invoice) => String(invoice.building_id) === String(building.id))
@@ -654,6 +658,7 @@ function App() {
           <div className="stat-card"><span>Unpaid active</span><strong>{unpaidInvoices.length}</strong></div>
           <div className="stat-card"><span>Payments today</span><strong>{paymentsToday.length}</strong></div>
         </div>
+        <div className="amount-summary"><div><span>Expected rent</span><strong>{formatAmount(totalContractRent)}</strong></div><div><span>Invoiced</span><strong>{formatAmount(totalInvoiced)}</strong></div><div><span>Collected</span><strong>{formatAmount(totalPaid)}</strong></div><div><span>Outstanding</span><strong>{formatAmount(totalOutstanding)}</strong></div></div>
         <div className="hq-section-heading"><div><p className="eyebrow">Portfolio directory</p><h2>Branches at a glance</h2></div><span>Choose a branch to enter its workspace</span></div>
         <div className="branch-grid">{branchCards.map((branch) => <button className="branch-card" key={branch.building.id} onClick={() => switchBuilding(String(branch.building.id))}><span>BRANCH: {branch.building.code}</span><strong>{branch.active} active</strong><small>{branch.expiring30} expiring in 30d · {branch.expired} expired · {branch.unpaid} unpaid</small></button>)}</div>
         </div>}
@@ -667,6 +672,7 @@ function App() {
           <div className="stat-card"><span>Unpaid active</span><strong>{unpaidInvoices.length}</strong></div>
           <div className="stat-card"><span>Payments today</span><strong>{paymentsToday.length}</strong></div>
         </div>
+        <div className="amount-summary"><div><span>Expected rent</span><strong>{formatAmount(totalContractRent)}</strong></div><div><span>Invoiced</span><strong>{formatAmount(totalInvoiced)}</strong></div><div><span>Collected</span><strong>{formatAmount(totalPaid)}</strong></div><div><span>Outstanding</span><strong>{formatAmount(totalOutstanding)}</strong></div></div>
         <div className="dashboard-columns">
           <div className="panel table-panel"><div className="section-heading"><h2>Contracts to expire</h2><span>Next 30 days</span></div>{expiring30.length === 0 ? <p className="empty-state">No contracts expiring in next 30 days.</p> : expiring30.map((contract) => <div className="dashboard-row" key={contract.id}><strong>{contract.tenant_id}</strong><span>{contract.unit_id}</span><span>{contract.end_date}</span><button className="row-action" onClick={() => showView('contracts')}>View / Pay</button></div>)}</div>
           <div className="panel table-panel"><div className="section-heading"><h2>Expired contracts</h2><span>{expiredContracts.length} records</span></div>{expiredContracts.length === 0 ? <p className="empty-state">No expired contracts.</p> : expiredContracts.map((contract) => <div className="dashboard-row" key={contract.id}><strong>{contract.tenant_id}</strong><span>{contract.unit_id}</span><span>{contract.end_date}</span><button className="row-action" onClick={() => showView('contracts')}>View</button></div>)}</div>
