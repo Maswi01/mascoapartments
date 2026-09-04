@@ -61,6 +61,8 @@ const defaultContractForm = {
   start_date: "",
   end_date: "",
   monthly_rent: "0",
+  period: "1",
+  prepaid_amount: "0",
   payment_method: "Bank Transfer",
   payment_frequency: "Monthly",
   utility_responsibility: "Tenant pays electricity and water",
@@ -452,6 +454,12 @@ function App() {
     goTo(`/units/edit/${unit.id}`);
   };
 
+  const rentUnit = (unit: UnitRecord) => {
+    setRentUnitID(unit.id);
+    setContractForm((current) => ({ ...current, unit_id: unit.id, contract_type: unit.type, monthly_rent: formatAmount(unit.base_rent), start_date: new Date().toISOString().slice(0, 10), period: "1", prepaid_amount: "0" }));
+    goTo(`/units/${unit.id}/rent`);
+  };
+
   const deleteUnit = async (unit: UnitRecord) => {
     const result = await Swal.fire({
       icon: "warning",
@@ -469,12 +477,6 @@ function App() {
     }
     setUnits((current) => current.filter((item) => item.id !== unit.id));
     void showSuccess("Unit deleted");
-  };
-
-  const rentUnit = (unit: UnitRecord) => {
-    setRentUnitID(unit.id);
-    setContractForm((current) => ({ ...current, unit_id: unit.id, contract_type: unit.type, monthly_rent: formatAmount(unit.base_rent) }));
-    goTo(`/units/${unit.id}/rent`);
   };
 
   const handleUnitSubmit = async (event: FormEvent) => {
@@ -537,6 +539,11 @@ function App() {
       [event.target.name]: event.target.value,
     }));
   };
+
+  const rentStartDate = contractForm.start_date ? new Date(`${contractForm.start_date}T00:00:00`) : null;
+  const rentPeriod = Math.max(1, Number(contractForm.period) || 1);
+  const calculatedEndDate = rentStartDate ? new Date(rentStartDate.getFullYear(), rentStartDate.getMonth() + rentPeriod, rentStartDate.getDate()).toISOString().slice(0, 10) : "";
+  const totalRent = amountNumber(contractForm.monthly_rent) * rentPeriod;
 
   const handlePaymentChange = (
     event: ChangeEvent<
@@ -608,6 +615,9 @@ function App() {
   const handleContractSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
+    const rentNotes = rentUnitID && amountNumber(contractForm.prepaid_amount) > 0
+      ? `${contractForm.notes}${contractForm.notes ? "\n" : ""}Prepaid amount: ${formatAmount(contractForm.prepaid_amount)}`
+      : contractForm.notes
     const response = await apiFetch("/contracts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -616,6 +626,8 @@ function App() {
         tenant_id: Number(contractForm.tenant_id),
         unit_id: Number(contractForm.unit_id),
         monthly_rent: amountNumber(contractForm.monthly_rent),
+        end_date: rentUnitID ? calculatedEndDate : contractForm.end_date,
+        notes: rentNotes,
       }),
     });
 
@@ -1795,8 +1807,10 @@ function App() {
                 </div>
                 <p className="empty-state">{selectedBuilding?.name} · Unit {units.find((unit) => unit.id === rentUnitID)?.number}</p>
                 <label>Tenant<select name="tenant_id" value={contractForm.tenant_id} onChange={handleContractChange} required><option value="">Select tenant</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.full_name || tenant.company_name}</option>)}</select></label>
-                <div className="inline-fields"><label>Start date<input type="date" name="start_date" value={contractForm.start_date} onChange={handleContractChange} required /></label><label>End date<input type="date" name="end_date" value={contractForm.end_date} onChange={handleContractChange} required /></label></div>
+                <div className="inline-fields"><label>Start date<input type="date" name="start_date" value={contractForm.start_date} onChange={handleContractChange} required /></label><label>Period (months)<input type="number" min="1" name="period" value={contractForm.period} onChange={handleContractChange} required /></label></div>
+                <div className="inline-fields"><label>End date<input type="date" value={calculatedEndDate} readOnly /></label><label>Total amount<input value={formatAmount(totalRent)} readOnly /></label></div>
                 <label>Required rent<input inputMode="decimal" name="monthly_rent" value={contractForm.monthly_rent} onChange={(event) => setContractForm((current) => ({ ...current, monthly_rent: formatAmount(event.target.value) }))} required /></label>
+                <label>Prepaid amount<input inputMode="decimal" name="prepaid_amount" value={contractForm.prepaid_amount} onChange={(event) => setContractForm((current) => ({ ...current, prepaid_amount: formatAmount(event.target.value) }))} /><small className="field-help">Amount paid now. Enter 0 when no payment is received.</small></label>
                 <div className="inline-fields"><label>Payment method<select name="payment_method" value={contractForm.payment_method} onChange={handleContractChange}><option>Bank Transfer</option><option>Cash</option><option>Mobile Money</option><option>Cheque</option></select></label><label>Payment frequency<select name="payment_frequency" value={contractForm.payment_frequency} onChange={handleContractChange}><option>Monthly</option><option>Every 3 months</option><option>Every 6 months</option><option>Yearly</option></select></label></div>
                 <label>Notes<textarea name="notes" value={contractForm.notes} onChange={handleContractChange} placeholder="Lease notes" /></label>
                 <button className="primary-button" type="submit">Create contract</button>
