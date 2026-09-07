@@ -194,6 +194,10 @@ function App() {
   const [roles, setRoles] = useState<string[]>([]);
   const [form, setForm] = useState(defaultForm);
   const [tenantForm, setTenantForm] = useState(defaultTenantForm);
+  const [tenantSearch, setTenantSearch] = useState("");
+  const [tenantTypeFilter, setTenantTypeFilter] = useState("All");
+  const [tenantPage, setTenantPage] = useState(1);
+  const [tenantPageSize, setTenantPageSize] = useState(10);
   const [unitRows, setUnitRows] = useState([defaultUnitForm]);
   const [unitSearch, setUnitSearch] = useState("");
   const [unitTypeFilter, setUnitTypeFilter] = useState("All");
@@ -969,6 +973,22 @@ function App() {
     (unitPage - 1) * unitPageSize,
     unitPage * unitPageSize,
   );
+  const filteredTenants = tenants.filter((tenant) => {
+    const search = tenantSearch.toLowerCase();
+    const name = (tenant.full_name || tenant.company_name || "").toLowerCase();
+    return (
+      (!search || `${name} ${tenant.phone || ""} ${tenant.email || ""}`.toLowerCase().includes(search)) &&
+      (tenantTypeFilter === "All" || tenant.type === tenantTypeFilter)
+    );
+  });
+  const tenantPageCount = Math.max(
+    1,
+    Math.ceil(filteredTenants.length / tenantPageSize),
+  );
+  const visibleTenants = filteredTenants.slice(
+    (tenantPage - 1) * tenantPageSize,
+    tenantPage * tenantPageSize,
+  );
   const filteredUnitsRentTotal = filteredUnits.reduce(
     (total, unit) => total + unit.base_rent,
     0,
@@ -983,6 +1003,13 @@ function App() {
     setUnitPageSize(10);
   };
 
+  const resetTenantList = () => {
+    setTenantSearch("");
+    setTenantTypeFilter("All");
+    setTenantPage(1);
+    setTenantPageSize(10);
+  };
+
   const showView = (nextView: View) => {
     setFormError("");
     if (nextView === "units") {
@@ -991,6 +1018,7 @@ function App() {
       goTo("/units");
     }
     if (nextView === "tenants") {
+      resetTenantList();
       goTo("/tenants");
     }
     setView(nextView);
@@ -2133,31 +2161,91 @@ function App() {
             <div className="panel list-panel">
               <div className="section-heading">
                 <h2>Tenants</h2>
-                <span>{tenants.length} entries</span>
+                <span>{filteredTenants.length} entries</span>
               </div>
-              <div className="building-list">
-                {tenants.length === 0 ? (
-                  <p className="empty-state">No tenants yet.</p>
-                ) : (
-                  tenants.map((tenant) => (
-                    <article className="building-card" key={tenant.id}>
-                      <div className="building-header">
-                        <div>
-                          <h3>
-                            {tenant.full_name ||
-                              tenant.company_name ||
-                              "Unnamed tenant"}
-                          </h3>
-                          <span className="code-tag">{tenant.type}</span>
-                        </div>
-                      </div>
-                      <p>
-                        {tenant.phone || "No phone"} ·{" "}
-                        {tenant.email || "No email"}
-                      </p>
-                    </article>
-                  ))
-                )}
+              <div className="unit-toolbar tenant-toolbar">
+                <input
+                  value={tenantSearch}
+                  onChange={(event) => {
+                    setTenantSearch(event.target.value);
+                    setTenantPage(1);
+                  }}
+                  placeholder="Search tenant"
+                />
+                <select
+                  value={tenantTypeFilter}
+                  onChange={(event) => {
+                    setTenantTypeFilter(event.target.value);
+                    setTenantPage(1);
+                  }}
+                >
+                  <option value="All">All types</option>
+                  <option>Person</option>
+                  <option>Institution</option>
+                </select>
+                <select
+                  value={tenantPageSize}
+                  onChange={(event) => {
+                    setTenantPageSize(Number(event.target.value));
+                    setTenantPage(1);
+                  }}
+                >
+                  <option value="10">10 entries</option>
+                  <option value="25">25 entries</option>
+                  <option value="50">50 entries</option>
+                </select>
+              </div>
+              <div className="unit-table-wrap">
+                <table className="unit-table tenant-table">
+                  <thead>
+                    <tr>
+                      <th>No.</th>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Phone</th>
+                      <th>Email</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleTenants.length === 0 ? (
+                      <tr>
+                        <td colSpan={5}>No tenants match these filters.</td>
+                      </tr>
+                    ) : (
+                      visibleTenants.map((tenant, index) => (
+                        <tr key={tenant.id}>
+                          <td>{(tenantPage - 1) * tenantPageSize + index + 1}</td>
+                          <td>{tenant.full_name || tenant.company_name || "Unnamed tenant"}</td>
+                          <td><span className="code-tag">{tenant.type}</span></td>
+                          <td>{tenant.phone || "-"}</td>
+                          <td>{tenant.email || "-"}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="pagination">
+                <span>
+                  Showing {visibleTenants.length ? (tenantPage - 1) * tenantPageSize + 1 : 0} to {Math.min(tenantPage * tenantPageSize, filteredTenants.length)} of {filteredTenants.length}
+                </span>
+                <div>
+                  <button
+                    type="button"
+                    disabled={tenantPage === 1}
+                    onClick={() => setTenantPage((page) => page - 1)}
+                  >
+                    Previous
+                  </button>
+                  <strong>{tenantPage}</strong>
+                  <button
+                    type="button"
+                    disabled={tenantPage >= tenantPageCount}
+                    onClick={() => setTenantPage((page) => page + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
           </div>
