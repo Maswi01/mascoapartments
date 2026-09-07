@@ -762,8 +762,8 @@ function App() {
     }
     await loadData();
     void showSuccess("Proforma invoice generated");
-    setView("invoices");
-    goTo("/invoices");
+    setView("tenants");
+    goTo("/tenants");
   };
 
   const handleContractSubmit = async (event: FormEvent) => {
