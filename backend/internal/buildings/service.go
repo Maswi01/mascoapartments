@@ -7,12 +7,13 @@ import (
 )
 
 var (
-	ErrBuildingNotFound = errors.New("building not found")
-	ErrFloorNotFound    = errors.New("floor not found")
-	ErrUnitNotFound     = errors.New("unit not found")
-	ErrTenantNotFound   = errors.New("tenant not found")
-	ErrContractNotFound = errors.New("contract not found")
-	ErrInvoiceNotFound  = errors.New("invoice not found")
+	ErrBuildingNotFound   = errors.New("building not found")
+	ErrFloorNotFound      = errors.New("floor not found")
+	ErrUnitNotFound       = errors.New("unit not found")
+	ErrTenantNotFound     = errors.New("tenant not found")
+	ErrTenantHasContracts = errors.New("cannot delete a tenant with rented units")
+	ErrContractNotFound   = errors.New("contract not found")
+	ErrInvoiceNotFound    = errors.New("invoice not found")
 )
 
 // Service is a simple in-memory implementation for the initial MVP.
@@ -184,6 +185,37 @@ func (s *Service) GetTenant(id uint64) (*Tenant, error) {
 		return nil, ErrTenantNotFound
 	}
 	return tenant, nil
+}
+
+func (s *Service) UpdateTenant(tenant Tenant) (*Tenant, error) {
+	if tenant.ID == 0 || tenant.Type == "" {
+		return nil, errors.New("tenant id and type are required")
+	}
+	if tenant.FullName == "" && tenant.CompanyName == "" {
+		return nil, errors.New("tenant name is required")
+	}
+	existing, ok := s.tenants[tenant.ID]
+	if !ok {
+		return nil, ErrTenantNotFound
+	}
+	tenant.BuildingID = existing.BuildingID
+	tenant.CreatedAt = existing.CreatedAt
+	tenant.UpdatedAt = time.Now()
+	s.tenants[tenant.ID] = &tenant
+	return &tenant, nil
+}
+
+func (s *Service) DeleteTenant(id uint64) error {
+	if _, ok := s.tenants[id]; !ok {
+		return ErrTenantNotFound
+	}
+	for _, contract := range s.contracts {
+		if contract.TenantID == id {
+			return ErrTenantHasContracts
+		}
+	}
+	delete(s.tenants, id)
+	return nil
 }
 
 func (s *Service) CreateContract(c Contract) (*Contract, error) {

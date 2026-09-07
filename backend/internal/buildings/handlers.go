@@ -29,6 +29,8 @@ type ServiceAPI interface {
 	CreateTenant(Tenant) (*Tenant, error)
 	ListTenants(uint64) []*Tenant
 	GetTenant(uint64) (*Tenant, error)
+	UpdateTenant(Tenant) (*Tenant, error)
+	DeleteTenant(uint64) error
 	CreateContract(Contract) (*Contract, error)
 	ListContracts(uint64) []*Contract
 	GetContract(uint64) (*Contract, error)
@@ -57,6 +59,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/units/{id}", h.deleteUnit)
 	mux.HandleFunc("GET /api/v1/tenants", h.listTenants)
 	mux.HandleFunc("POST /api/v1/tenants", h.createTenant)
+	mux.HandleFunc("PUT /api/v1/tenants/{id}", h.updateTenant)
+	mux.HandleFunc("DELETE /api/v1/tenants/{id}", h.deleteTenant)
 	mux.HandleFunc("GET /api/v1/contracts", h.listContracts)
 	mux.HandleFunc("POST /api/v1/contracts", h.createContract)
 	mux.HandleFunc("GET /api/v1/contracts/{id}/preview", h.previewContract)
@@ -218,6 +222,40 @@ func (h *Handler) createTenant(writer http.ResponseWriter, request *http.Request
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusCreated)
 	json.NewEncoder(writer).Encode(created)
+}
+
+func (h *Handler) updateTenant(writer http.ResponseWriter, request *http.Request) {
+	id, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	var tenant Tenant
+	if err := json.NewDecoder(request.Body).Decode(&tenant); err != nil {
+		writeJSONError(writer, http.StatusBadRequest, "invalid tenant payload")
+		return
+	}
+	tenant.ID = id
+	updated, err := h.service.UpdateTenant(tenant)
+	if err != nil {
+		writeJSONError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(writer).Encode(updated)
+}
+
+func (h *Handler) deleteTenant(writer http.ResponseWriter, request *http.Request) {
+	id, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid tenant id")
+		return
+	}
+	if err := h.service.DeleteTenant(id); err != nil {
+		writeJSONError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) listContracts(writer http.ResponseWriter, request *http.Request) {

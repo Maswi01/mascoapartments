@@ -226,6 +226,36 @@ func (s *MySQLService) GetTenant(id uint64) (*Tenant, error) {
 	return tenant, nil
 }
 
+func (s *MySQLService) UpdateTenant(tenant Tenant) (*Tenant, error) {
+	if tenant.ID == 0 || tenant.Type == "" || (tenant.FullName == "" && tenant.CompanyName == "") {
+		return nil, errors.New("tenant id, type, and name are required")
+	}
+	_, err := s.db.Exec(`UPDATE tenants SET tenant_type = ?, full_name = ?, company_name = ?, contact_person = ?, phone = ?, email = ?, address = ?, id_number = ?, registration_reference = ?, notes = ?, updated_at = ? WHERE id = ?`, tenant.Type, tenant.FullName, tenant.CompanyName, tenant.ContactPerson, tenant.Phone, tenant.Email, tenant.Address, tenant.IDNumber, tenant.RegistrationRef, tenant.Notes, time.Now(), tenant.ID)
+	if err != nil {
+		return nil, fmt.Errorf("update tenant: %w", err)
+	}
+	return s.GetTenant(tenant.ID)
+}
+
+func (s *MySQLService) DeleteTenant(id uint64) error {
+	var contractCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM contracts WHERE tenant_id = ?`, id).Scan(&contractCount); err != nil {
+		return fmt.Errorf("check tenant contracts: %w", err)
+	}
+	if contractCount > 0 {
+		return ErrTenantHasContracts
+	}
+	result, err := s.db.Exec(`DELETE FROM tenants WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete tenant: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil || count == 0 {
+		return ErrTenantNotFound
+	}
+	return nil
+}
+
 func (s *MySQLService) CreateContract(contract Contract) (*Contract, error) {
 	if contract.UnitID == 0 || contract.TenantID == 0 || contract.ContractType == "" {
 		return nil, errors.New("unit id, tenant id, and contract type are required")

@@ -104,3 +104,19 @@ func TestServiceTracksPortfolioAndDashboardSummary(t *testing.T) {
 		t.Fatalf("expected 1 unit, got %d", summary.Units)
 	}
 }
+
+func TestServiceRejectsDeletingTenantWithContract(t *testing.T) {
+	service := NewService()
+	tenant, err := service.CreateTenant(Tenant{Type: "Person", FullName: "Rented Tenant"})
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	service.contracts[1] = &Contract{ID: 1, TenantID: tenant.ID, UnitID: 1}
+
+	if err := service.DeleteTenant(tenant.ID); err != ErrTenantHasContracts {
+		t.Fatalf("expected rented tenant delete to fail, got %v", err)
+	}
+	if _, err := service.GetTenant(tenant.ID); err != nil {
+		t.Fatalf("tenant should remain after rejected delete: %v", err)
+	}
+}

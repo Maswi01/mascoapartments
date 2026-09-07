@@ -97,8 +97,13 @@ type TenantRecord = {
   type: string;
   full_name?: string;
   company_name?: string;
+  contact_person?: string;
   phone?: string;
   email?: string;
+  address?: string;
+  id_number?: string;
+  registration_ref?: string;
+  notes?: string;
 };
 
 type UnitRecord = {
@@ -198,6 +203,7 @@ function App() {
   const [tenantTypeFilter, setTenantTypeFilter] = useState("All");
   const [tenantPage, setTenantPage] = useState(1);
   const [tenantPageSize, setTenantPageSize] = useState(10);
+  const [editingTenantID, setEditingTenantID] = useState<string | null>(null);
   const [unitRows, setUnitRows] = useState([defaultUnitForm]);
   const [unitSearch, setUnitSearch] = useState("");
   const [unitTypeFilter, setUnitTypeFilter] = useState("All");
@@ -208,8 +214,8 @@ function App() {
   const [unitPageMode, setUnitPageMode] = useState<"list" | "create" | "rent">(() =>
     window.location.pathname === "/units/new" ? "create" : window.location.pathname.includes("/rent") ? "rent" : "list",
   );
-  const [tenantPageMode, setTenantPageMode] = useState<"list" | "create">(() =>
-    window.location.pathname === "/tenants/new" ? "create" : "list",
+  const [tenantPageMode, setTenantPageMode] = useState<"list" | "create" | "edit">(() =>
+    window.location.pathname === "/tenants/new" ? "create" : window.location.pathname === "/tenants/edit" ? "edit" : "list",
   );
   const [editingUnitID, setEditingUnitID] = useState<string | null>(null);
   const [rentUnitID, setRentUnitID] = useState<string | null>(null);
@@ -246,6 +252,7 @@ function App() {
     if (path.includes("/rent")) setUnitPageMode("rent");
     if (path === "/tenants/new") setTenantPageMode("create");
     if (path === "/tenants") setTenantPageMode("list");
+    if (path === "/tenants/edit") setTenantPageMode("edit");
   };
 
   const logout = () => {
@@ -449,6 +456,55 @@ function App() {
     }));
   };
 
+  const editTenant = (tenant: TenantRecord) => {
+    setEditingTenantID(tenant.id);
+    setTenantForm({
+      ...defaultTenantForm,
+      type: tenant.type,
+      full_name: tenant.full_name ?? "",
+      company_name: tenant.company_name ?? "",
+      contact_person: tenant.contact_person ?? "",
+      phone: tenant.phone ?? "",
+      email: tenant.email ?? "",
+      address: tenant.address ?? "",
+      id_number: tenant.id_number ?? "",
+      notes: tenant.notes ?? "",
+    });
+    goTo("/tenants/edit");
+  };
+
+  const deleteTenant = async (tenant: TenantRecord) => {
+    const rentedUnits = contracts
+      .filter((contract) => String(contract.tenant_id) === String(tenant.id))
+      .map((contract) => units.find((unit) => String(unit.id) === String(contract.unit_id))?.number)
+      .filter(Boolean);
+    if (rentedUnits.length > 0) {
+      await Swal.fire({
+        icon: "info",
+        title: "Tenant cannot be deleted",
+        text: `This tenant has rented unit${rentedUnits.length === 1 ? "" : "s"}: ${rentedUnits.join(", ")}.`,
+        confirmButtonColor: "#133d32",
+      });
+      return;
+    }
+    const result = await Swal.fire({
+      icon: "warning",
+      title: `Delete ${tenant.full_name || tenant.company_name || "tenant"}?`,
+      text: "This action cannot be undone.",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      confirmButtonColor: "#d9574f",
+    });
+    if (!result.isConfirmed) return;
+    const response = await apiFetch(`/tenants/${tenant.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      await showRequestError(response, "Could not delete tenant.");
+      return;
+    }
+    setTenants((current) => current.filter((item) => item.id !== tenant.id));
+    void showSuccess("Tenant deleted");
+  };
+
   const updateUnitRow = (rowIndex: number, field: string, value: string) => {
     setUnitRows((current) =>
       current.map((row, index) =>
@@ -615,20 +671,24 @@ function App() {
   const handleTenantSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
-    const response = await apiFetch("/tenants", {
-      method: "POST",
+    const response = await apiFetch(
+      editingTenantID ? `/tenants/${editingTenantID}` : "/tenants",
+      {
+      method: editingTenantID ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...tenantForm,
         building_id: Number(selectedBuildingID),
       }),
-    });
+      },
+    );
 
     if (response.ok) {
       await loadData();
       setTenantForm(defaultTenantForm);
+      setEditingTenantID(null);
       goTo("/tenants");
-      void showSuccess("Tenant saved");
+      void showSuccess(editingTenantID ? "Tenant updated" : "Tenant saved");
     } else {
       await showRequestError(response, "Could not save tenant.");
     }
@@ -1019,6 +1079,8 @@ function App() {
     }
     if (nextView === "tenants") {
       resetTenantList();
+      setEditingTenantID(null);
+      setTenantForm(defaultTenantForm);
       goTo("/tenants");
     }
     setView(nextView);
@@ -2059,14 +2121,18 @@ function App() {
                 + Add tenant
               </button>
             )}
-            {tenantPageMode === "create" && (
+            {(tenantPageMode === "create" || tenantPageMode === "edit") && (
               <form className="panel form-panel" onSubmit={handleTenantSubmit}>
                 <div className="section-heading">
-                  <h2>Add tenant</h2>
+                  <h2>{tenantPageMode === "edit" ? "Edit tenant" : "Add tenant"}</h2>
                   <button
                     className="secondary-button"
                     type="button"
-                    onClick={() => goTo("/tenants")}
+                    onClick={() => {
+                      setEditingTenantID(null);
+                      setTenantForm(defaultTenantForm);
+                      goTo("/tenants");
+                    }}
                   >
                     Back to list
                   </button>
@@ -2204,21 +2270,38 @@ function App() {
                       <th>Type</th>
                       <th>Phone</th>
                       <th>Email</th>
+                      <th>Rented units</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {visibleTenants.length === 0 ? (
                       <tr>
-                        <td colSpan={5}>No tenants match these filters.</td>
+                        <td colSpan={7}>No tenants match these filters.</td>
                       </tr>
                     ) : (
                       visibleTenants.map((tenant, index) => (
                         <tr key={tenant.id}>
+                          {(() => {
+                            const rentedUnits = contracts
+                              .filter((contract) => String(contract.tenant_id) === String(tenant.id))
+                              .map((contract) => units.find((unit) => String(unit.id) === String(contract.unit_id))?.number)
+                              .filter(Boolean);
+                            return (
+                              <>
                           <td>{(tenantPage - 1) * tenantPageSize + index + 1}</td>
                           <td>{tenant.full_name || tenant.company_name || "Unnamed tenant"}</td>
                           <td><span className="code-tag">{tenant.type}</span></td>
                           <td>{tenant.phone || "-"}</td>
                           <td>{tenant.email || "-"}</td>
+                          <td>{rentedUnits.length ? rentedUnits.join(", ") : "None"}</td>
+                          <td>
+                            <button className="table-action edit" type="button" onClick={() => editTenant(tenant)}>Edit</button>
+                            <button className="table-action delete" type="button" onClick={() => void deleteTenant(tenant)} disabled={rentedUnits.length > 0}>Delete</button>
+                          </td>
+                              </>
+                            );
+                          })()}
                         </tr>
                       ))
                     )}
