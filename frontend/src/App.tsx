@@ -81,6 +81,14 @@ const defaultPaymentForm = {
   notes: "",
 };
 
+const defaultProformaForm = {
+  unit_id: "",
+  start_date: new Date().toISOString().slice(0, 10),
+  period: "1",
+  prepaid_amount: "0",
+  issue_date: new Date().toISOString().slice(0, 10),
+};
+
 type BuildingRecord = {
   id: string;
   name: string;
@@ -214,9 +222,11 @@ function App() {
   const [unitPageMode, setUnitPageMode] = useState<"list" | "create" | "rent">(() =>
     window.location.pathname === "/units/new" ? "create" : window.location.pathname.includes("/rent") ? "rent" : "list",
   );
-  const [tenantPageMode, setTenantPageMode] = useState<"list" | "create" | "edit">(() =>
-    window.location.pathname === "/tenants/new" ? "create" : window.location.pathname === "/tenants/edit" ? "edit" : "list",
+  const [tenantPageMode, setTenantPageMode] = useState<"list" | "create" | "edit" | "invoice">(() =>
+    window.location.pathname === "/tenants/new" ? "create" : window.location.pathname === "/tenants/edit" ? "edit" : window.location.pathname.includes("/invoice") ? "invoice" : "list",
   );
+  const [proformaTenantID, setProformaTenantID] = useState<string | null>(null);
+  const [proformaForm, setProformaForm] = useState(defaultProformaForm);
   const [editingUnitID, setEditingUnitID] = useState<string | null>(null);
   const [rentUnitID, setRentUnitID] = useState<string | null>(null);
   const [contractForm, setContractForm] = useState(defaultContractForm);
@@ -253,6 +263,7 @@ function App() {
     if (path === "/tenants/new") setTenantPageMode("create");
     if (path === "/tenants") setTenantPageMode("list");
     if (path === "/tenants/edit") setTenantPageMode("edit");
+    if (path.includes("/invoice")) setTenantPageMode("invoice");
   };
 
   const logout = () => {
@@ -684,14 +695,75 @@ function App() {
     );
 
     if (response.ok) {
+      const createdTenant = (await response.json()) as TenantRecord;
       await loadData();
       setTenantForm(defaultTenantForm);
       setEditingTenantID(null);
-      goTo("/tenants");
-      void showSuccess(editingTenantID ? "Tenant updated" : "Tenant saved");
+      if (editingTenantID) {
+        goTo("/tenants");
+        void showSuccess("Tenant updated");
+      } else {
+        setProformaTenantID(createdTenant.id);
+        setProformaForm(defaultProformaForm);
+        goTo(`/tenants/${createdTenant.id}/invoice`);
+        void showSuccess("Tenant saved. Prepare the invoice.");
+      }
     } else {
       await showRequestError(response, "Could not save tenant.");
     }
+  };
+
+  const handleProformaChange = (
+    event: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
+    setProformaForm((current) => ({
+      ...current,
+      [event.target.name]: event.target.value,
+    }));
+  };
+
+  const handleProformaSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const selectedUnit = units.find((unit) => String(unit.id) === proformaForm.unit_id);
+    if (!selectedUnit || !proformaTenantID) return;
+    const period = Math.max(1, Number(proformaForm.period) || 1);
+    const startDate = new Date(`${proformaForm.start_date}T00:00:00`);
+    const endDate = new Date(
+      startDate.getFullYear(),
+      startDate.getMonth() + period,
+      startDate.getDate(),
+    ).toISOString().slice(0, 10);
+    const contractResponse = await apiFetch("/contracts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tenant_id: Number(proformaTenantID),
+        unit_id: Number(selectedUnit.id),
+        contract_type: selectedUnit.type,
+        start_date: proformaForm.start_date,
+        end_date: endDate,
+        monthly_rent: selectedUnit.base_rent,
+        payment_frequency: "Monthly",
+        status: "Active",
+        notes: `Prepaid amount: ${formatAmount(proformaForm.prepaid_amount)}`,
+      }),
+    });
+    if (!contractResponse.ok) {
+      await showRequestError(contractResponse, "Could not create the tenant contract.");
+      return;
+    }
+    const contract = (await contractResponse.json()) as ContractRecord;
+    const invoiceResponse = await apiFetch(`/contracts/${contract.id}/invoices`, {
+      method: "POST",
+    });
+    if (!invoiceResponse.ok) {
+      await showRequestError(invoiceResponse, "Could not generate the proforma invoice.");
+      return;
+    }
+    await loadData();
+    void showSuccess("Proforma invoice generated");
+    setView("invoices");
+    goTo("/invoices");
   };
 
   const handleContractSubmit = async (event: FormEvent) => {
@@ -2112,6 +2184,62 @@ function App() {
 
         {view === "tenants" && (
           <div className={`panel-grid tenants-workspace ${tenantPageMode}`}>
+            {tenantPageMode === "invoice" && (
+              <form className="panel form-panel proforma-panel" onSubmit={handleProformaSubmit}>
+                <div className="section-heading">
+                  <h2>Prepare proforma invoice</h2>
+                  <button className="secondary-button" type="button" onClick={() => goTo("/tenants")}>
+                    Back to tenants
+                  </button>
+                </div>
+                <p className="empty-state">
+                  Tenant: {tenants.find((tenant) => String(tenant.id) === proformaTenantID)?.full_name || tenants.find((tenant) => String(tenant.id) === proformaTenantID)?.company_name || "New tenant"}
+                </p>
+                <label>
+                  Room
+                  <select name="unit_id" value={proformaForm.unit_id} onChange={handleProformaChange} required>
+                    <option value="">Choose room</option>
+                    {units.filter((unit) => unit.status === "Vacant").map((unit) => (
+                      <option key={unit.id} value={unit.id}>{unit.number}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Monthly price
+                  <input value={proformaForm.unit_id ? formatAmount(units.find((unit) => String(unit.id) === proformaForm.unit_id)?.base_rent ?? 0) : ""} readOnly />
+                </label>
+                <label>
+                  Entry date
+                  <input type="date" name="start_date" value={proformaForm.start_date} onChange={handleProformaChange} required />
+                </label>
+                <label>
+                  Period (months)
+                  <input type="number" min="1" name="period" value={proformaForm.period} onChange={handleProformaChange} required />
+                </label>
+                <label>
+                  Ending date
+                  <input value={(() => { const start = new Date(`${proformaForm.start_date}T00:00:00`); const period = Math.max(1, Number(proformaForm.period) || 1); return proformaForm.start_date ? new Date(start.getFullYear(), start.getMonth() + period, start.getDate()).toISOString().slice(0, 10) : ""; })()} readOnly />
+                </label>
+                <label>
+                  Total amount
+                  <input value={formatAmount((units.find((unit) => String(unit.id) === proformaForm.unit_id)?.base_rent ?? 0) * (Number(proformaForm.period) || 1))} readOnly />
+                </label>
+                <label>
+                  Prepaid amount
+                  <input inputMode="decimal" name="prepaid_amount" value={proformaForm.prepaid_amount} onChange={handleProformaChange} />
+                  <small className="field-help">If customer pays now, put amount here. (0 = no payment)</small>
+                </label>
+                <label>
+                  Balance
+                  <input value={formatAmount(Math.max(0, (units.find((unit) => String(unit.id) === proformaForm.unit_id)?.base_rent ?? 0) * (Number(proformaForm.period) || 1) - amountNumber(proformaForm.prepaid_amount)))} readOnly />
+                </label>
+                <label>
+                  Date
+                  <input type="date" name="issue_date" value={proformaForm.issue_date} onChange={handleProformaChange} required />
+                </label>
+                <button className="primary-button" type="submit">Generate invoice</button>
+              </form>
+            )}
             {tenantPageMode === "list" && (
               <button
                 className="secondary-button tenants-add-button"
