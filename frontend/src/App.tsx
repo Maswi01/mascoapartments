@@ -204,6 +204,9 @@ function App() {
   const [unitPageMode, setUnitPageMode] = useState<"list" | "create" | "rent">(() =>
     window.location.pathname === "/units/new" ? "create" : window.location.pathname.includes("/rent") ? "rent" : "list",
   );
+  const [tenantPageMode, setTenantPageMode] = useState<"list" | "create">(() =>
+    window.location.pathname === "/tenants/new" ? "create" : "list",
+  );
   const [editingUnitID, setEditingUnitID] = useState<string | null>(null);
   const [rentUnitID, setRentUnitID] = useState<string | null>(null);
   const [contractForm, setContractForm] = useState(defaultContractForm);
@@ -237,6 +240,8 @@ function App() {
     if (path === "/units/new") setUnitPageMode("create");
     if (path === "/units") setUnitPageMode("list");
     if (path.includes("/rent")) setUnitPageMode("rent");
+    if (path === "/tenants/new") setTenantPageMode("create");
+    if (path === "/tenants") setTenantPageMode("list");
   };
 
   const logout = () => {
@@ -618,6 +623,7 @@ function App() {
     if (response.ok) {
       await loadData();
       setTenantForm(defaultTenantForm);
+      goTo("/tenants");
       void showSuccess("Tenant saved");
     } else {
       await showRequestError(response, "Could not save tenant.");
@@ -968,11 +974,24 @@ function App() {
     0,
   );
 
+  const resetUnitList = () => {
+    setUnitSearch("");
+    setUnitTypeFilter("All");
+    setUnitStatusFilter("All");
+    setUnitFloorFilter("All");
+    setUnitPage(1);
+    setUnitPageSize(10);
+  };
+
   const showView = (nextView: View) => {
     setFormError("");
     if (nextView === "units") {
+      resetUnitList();
       setRentUnitID(null);
       goTo("/units");
+    }
+    if (nextView === "tenants") {
+      goTo("/tenants");
     }
     setView(nextView);
   };
@@ -2002,9 +2021,28 @@ function App() {
         )}
 
         {view === "tenants" && (
-          <div className="panel-grid">
-            <form className="panel form-panel" onSubmit={handleTenantSubmit}>
-              <h2>Add tenant</h2>
+          <div className={`panel-grid tenants-workspace ${tenantPageMode}`}>
+            {tenantPageMode === "list" && (
+              <button
+                className="secondary-button tenants-add-button"
+                type="button"
+                onClick={() => goTo("/tenants/new")}
+              >
+                + Add tenant
+              </button>
+            )}
+            {tenantPageMode === "create" && (
+              <form className="panel form-panel" onSubmit={handleTenantSubmit}>
+                <div className="section-heading">
+                  <h2>Add tenant</h2>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => goTo("/tenants")}
+                  >
+                    Back to list
+                  </button>
+                </div>
               <label>
                 Tenant type
                 <select
@@ -2089,10 +2127,14 @@ function App() {
               <button className="primary-button" type="submit">
                 Save tenant
               </button>
-            </form>
+              </form>
+            )}
 
             <div className="panel list-panel">
-              <h2>Tenants</h2>
+              <div className="section-heading">
+                <h2>Tenants</h2>
+                <span>{tenants.length} entries</span>
+              </div>
               <div className="building-list">
                 {tenants.length === 0 ? (
                   <p className="empty-state">No tenants yet.</p>
