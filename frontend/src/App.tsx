@@ -970,6 +970,10 @@ function App() {
 
   const showView = (nextView: View) => {
     setFormError("");
+    if (nextView === "units") {
+      setRentUnitID(null);
+      goTo("/units");
+    }
     setView(nextView);
   };
 
