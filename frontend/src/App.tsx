@@ -1618,7 +1618,7 @@ function App() {
         )}
 
         {view === "buildings" && (
-          <div className={`panel-grid units-workspace ${unitPageMode}`}>
+          <div className="panel-grid">
             <form className="panel form-panel" onSubmit={handleSubmit}>
               <h2>Add building</h2>
               <label>
@@ -1716,7 +1716,7 @@ function App() {
         )}
 
         {view === "units" && (
-          <div className="panel-grid">
+          <div className={`panel-grid units-workspace ${unitPageMode}`}>
             {unitPageMode === "list" && (
               <button
                 className="secondary-button units-add-button"
