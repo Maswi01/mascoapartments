@@ -2283,10 +2283,13 @@ function App() {
                       visibleTenants.map((tenant, index) => (
                         <tr key={tenant.id}>
                           {(() => {
-                            const rentedUnits = contracts
+                            const rentedContracts = contracts
                               .filter((contract) => String(contract.tenant_id) === String(tenant.id))
-                              .map((contract) => units.find((unit) => String(unit.id) === String(contract.unit_id))?.number)
-                              .filter(Boolean);
+                              .map((contract) => ({
+                                contract,
+                                unit: units.find((unit) => String(unit.id) === String(contract.unit_id)),
+                              }))
+                              .filter((item) => item.unit);
                             return (
                               <>
                           <td>{(tenantPage - 1) * tenantPageSize + index + 1}</td>
@@ -2294,10 +2297,22 @@ function App() {
                           <td><span className="code-tag">{tenant.type}</span></td>
                           <td>{tenant.phone || "-"}</td>
                           <td>{tenant.email || "-"}</td>
-                          <td>{rentedUnits.length ? rentedUnits.join(", ") : "None"}</td>
+                          <td>
+                            {rentedContracts.length ? rentedContracts.map(({ contract, unit }) => (
+                              <button
+                                className="contract-unit-link"
+                                key={contract.id}
+                                type="button"
+                                title="Open contract"
+                                onClick={() => void handleContractPreview(contract.id)}
+                              >
+                                {unit?.number}
+                              </button>
+                            )) : "None"}
+                          </td>
                           <td>
                             <button className="table-action edit" type="button" onClick={() => editTenant(tenant)}>Edit</button>
-                            <button className="table-action delete" type="button" onClick={() => void deleteTenant(tenant)} disabled={rentedUnits.length > 0}>Delete</button>
+                            <button className="table-action delete" type="button" onClick={() => void deleteTenant(tenant)} disabled={rentedContracts.length > 0}>Delete</button>
                           </td>
                               </>
                             );
