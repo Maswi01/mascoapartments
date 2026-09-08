@@ -89,6 +89,12 @@ const defaultProformaForm = {
   issue_date: new Date().toISOString().slice(0, 10),
 };
 
+const defaultContractUpgradeForm = {
+  period: "1",
+  prepaid_amount: "0",
+  payment_date: new Date().toISOString().slice(0, 10),
+};
+
 type BuildingRecord = {
   id: string;
   name: string;
@@ -143,6 +149,7 @@ type ContractRecord = {
 
 type InvoiceRecord = {
   id: string;
+  contract_id: string;
   building_id: number;
   number: string;
   amount: number;
@@ -230,6 +237,13 @@ function App() {
   const [editingUnitID, setEditingUnitID] = useState<string | null>(null);
   const [rentUnitID, setRentUnitID] = useState<string | null>(null);
   const [contractForm, setContractForm] = useState(defaultContractForm);
+  const [contractPageMode, setContractPageMode] = useState<"list" | "create" | "upgrade">("list");
+  const [contractSearch, setContractSearch] = useState("");
+  const [contractStatusFilter, setContractStatusFilter] = useState("All");
+  const [contractPage, setContractPage] = useState(1);
+  const [contractPageSize, setContractPageSize] = useState(10);
+  const [upgradingContractID, setUpgradingContractID] = useState<string | null>(null);
+  const [contractUpgradeForm, setContractUpgradeForm] = useState(defaultContractUpgradeForm);
   const [paymentForm, setPaymentForm] = useState(defaultPaymentForm);
   const [documentContractID, setDocumentContractID] = useState("");
   const [documentName, setDocumentName] = useState("");
@@ -264,6 +278,9 @@ function App() {
     if (path === "/tenants") setTenantPageMode("list");
     if (path === "/tenants/edit") setTenantPageMode("edit");
     if (path.includes("/invoice")) setTenantPageMode("invoice");
+    if (path === "/contracts") setContractPageMode("list");
+    if (path === "/contracts/new") setContractPageMode("create");
+    if (path.includes("/upgrade")) setContractPageMode("upgrade");
   };
 
   const logout = () => {
@@ -791,11 +808,64 @@ function App() {
       if (rentUnitID) {
         setRentUnitID(null)
         goTo('/units')
+      } else {
+        goTo("/contracts");
       }
       void showSuccess("Contract saved");
     } else {
       await showRequestError(response, "Could not save contract.");
     }
+  };
+
+  const terminateContract = async (contract: ContractRecord) => {
+    const result = await Swal.fire({
+      icon: "warning",
+      title: "Terminate contract?",
+      text: "The unit will become available for rent.",
+      showCancelButton: true,
+      confirmButtonText: "Terminate",
+      confirmButtonColor: "#d9574f",
+    });
+    if (!result.isConfirmed) return;
+    const response = await apiFetch(`/contracts/${contract.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...contract, status: "Cancelled" }),
+    });
+    if (!response.ok) {
+      await showRequestError(response, "Could not terminate contract.");
+      return;
+    }
+    await loadData();
+    void showSuccess("Contract terminated");
+  };
+
+  const upgradeContract = (contract: ContractRecord) => {
+    setUpgradingContractID(contract.id);
+    setContractUpgradeForm(defaultContractUpgradeForm);
+    goTo(`/contracts/${contract.id}/upgrade`);
+  };
+
+  const handleContractUpgradeSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const contract = contracts.find((item) => item.id === upgradingContractID);
+    if (!contract) return;
+    const period = Math.max(1, Number(contractUpgradeForm.period) || 1);
+    const currentEndDate = new Date(`${contract.end_date}T00:00:00`);
+    const endDate = new Date(currentEndDate.getFullYear(), currentEndDate.getMonth() + period, currentEndDate.getDate()).toISOString().slice(0, 10);
+    const response = await apiFetch(`/contracts/${contract.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...contract, end_date: endDate, status: "Active" }),
+    });
+    if (!response.ok) {
+      await showRequestError(response, "Could not upgrade contract.");
+      return;
+    }
+    await loadData();
+    setContractPageMode("list");
+    goTo("/contracts");
+    void showSuccess("Contract upgraded");
   };
 
   const handleGenerateInvoice = async (contractID: string) => {
@@ -808,6 +878,16 @@ function App() {
     }
     await loadData();
     void showSuccess("Invoice generated");
+  };
+
+  const payContractInvoice = (contractID: string) => {
+    const invoice = invoices.find((item) => String(item.contract_id) === String(contractID));
+    if (!invoice) {
+      void Swal.fire({ icon: "info", title: "No invoice yet", text: "Generate an invoice for this contract before recording payment.", confirmButtonColor: "#133d32" });
+      return;
+    }
+    setPaymentForm((current) => ({ ...current, invoice_id: invoice.id, amount: formatAmount(invoice.amount) }));
+    setView("payments");
   };
 
   const handlePaymentSubmit = async (event: FormEvent) => {
@@ -1125,6 +1205,15 @@ function App() {
     (total, unit) => total + unit.base_rent,
     0,
   );
+  const filteredContracts = contracts.filter((contract) => {
+    const tenant = tenants.find((item) => String(item.id) === String(contract.tenant_id));
+    const unit = units.find((item) => String(item.id) === String(contract.unit_id));
+    const search = contractSearch.toLowerCase();
+    const searchable = `${tenant?.full_name || tenant?.company_name || ""} ${unit?.number || ""}`.toLowerCase();
+    return (!search || searchable.includes(search)) && (contractStatusFilter === "All" || contract.status === contractStatusFilter);
+  });
+  const contractPageCount = Math.max(1, Math.ceil(filteredContracts.length / contractPageSize));
+  const visibleContracts = filteredContracts.slice((contractPage - 1) * contractPageSize, contractPage * contractPageSize);
 
   const resetUnitList = () => {
     setUnitSearch("");
@@ -1142,6 +1231,15 @@ function App() {
     setTenantPageSize(10);
   };
 
+  const resetContractList = () => {
+    setContractSearch("");
+    setContractStatusFilter("All");
+    setContractPage(1);
+    setContractPageSize(10);
+    setUpgradingContractID(null);
+    setContractUpgradeForm(defaultContractUpgradeForm);
+  };
+
   const showView = (nextView: View) => {
     setFormError("");
     if (nextView === "units") {
@@ -1154,6 +1252,10 @@ function App() {
       setEditingTenantID(null);
       setTenantForm(defaultTenantForm);
       goTo("/tenants");
+    }
+    if (nextView === "contracts") {
+      resetContractList();
+      goTo("/contracts");
     }
     setView(nextView);
   };
@@ -2479,12 +2581,37 @@ function App() {
 
         {view === "contracts" && (
           <>
-            <div className="panel-grid">
+            <div className={`panel-grid contracts-workspace ${contractPageMode}`}>
+              {contractPageMode === "list" && (
+                <button className="secondary-button contracts-add-button" type="button" onClick={() => goTo("/contracts/new")}>
+                  + Add contract
+                </button>
+              )}
+              {contractPageMode === "upgrade" && (() => {
+                const contract = contracts.find((item) => item.id === upgradingContractID);
+                const unit = units.find((item) => String(item.id) === String(contract?.unit_id));
+                const period = Math.max(1, Number(contractUpgradeForm.period) || 1);
+                const endDate = contract?.end_date ? new Date(new Date(`${contract.end_date}T00:00:00`).getFullYear(), new Date(`${contract.end_date}T00:00:00`).getMonth() + period, new Date(`${contract.end_date}T00:00:00`).getDate()).toISOString().slice(0, 10) : "";
+                return (
+                  <form className="panel form-panel contract-upgrade-panel" onSubmit={handleContractUpgradeSubmit}>
+                    <div className="section-heading"><h2>Upgrade tenant contract</h2><button className="secondary-button" type="button" onClick={() => goTo("/contracts")}>Back to list</button></div>
+                    <p className="empty-state">{unit?.number || "Unit"} · Current ending date: {contract?.end_date || "-"}</p>
+                    <label>Monthly price<input value={formatAmount(contract?.monthly_rent ?? 0)} readOnly /></label>
+                    <label>Add period (months)<input type="number" min="1" name="period" value={contractUpgradeForm.period} onChange={(event) => setContractUpgradeForm((current) => ({ ...current, period: event.target.value }))} required /></label>
+                    <label>New ending date<input value={endDate} readOnly /></label>
+                    <label>Total amount (added)<input value={formatAmount((contract?.monthly_rent ?? 0) * period)} readOnly /></label>
+                    <label>Prepaid amount<input inputMode="decimal" name="prepaid_amount" value={contractUpgradeForm.prepaid_amount} onChange={(event) => setContractUpgradeForm((current) => ({ ...current, prepaid_amount: formatAmount(event.target.value) }))} /></label>
+                    <label>Balance<input value={formatAmount(Math.max(0, (contract?.monthly_rent ?? 0) * period - amountNumber(contractUpgradeForm.prepaid_amount)))} readOnly /></label>
+                    <label>Date<input type="date" name="payment_date" value={contractUpgradeForm.payment_date} onChange={(event) => setContractUpgradeForm((current) => ({ ...current, payment_date: event.target.value }))} required /></label>
+                    <button className="primary-button" type="submit">Save upgrade</button>
+                  </form>
+                );
+              })()}
               <form
                 className="panel form-panel"
                 onSubmit={handleContractSubmit}
               >
-                <h2>Add contract</h2>
+                <div className="section-heading"><h2>Add contract</h2><button className="secondary-button" type="button" onClick={() => goTo("/contracts")}>Back to list</button></div>
                 <label>
                   Tenant
                   <select
@@ -2641,40 +2768,23 @@ function App() {
               </form>
 
               <div className="panel list-panel">
-                <h2>Contracts</h2>
-                <div className="building-list">
-                  {contracts.length === 0 ? (
-                    <p className="empty-state">No contracts yet.</p>
-                  ) : (
-                    contracts.map((contract) => (
-                      <article className="building-card" key={contract.id}>
-                        <div className="building-header">
-                          <div>
-                            <h3>{contract.contract_type}</h3>
-                            <span className="code-tag">{contract.status}</span>
-                          </div>
-                        </div>
-                        <p>Tenant ID: {contract.tenant_id}</p>
-                        <div className="meta-row">
-                          <span>Unit ID: {contract.unit_id}</span>
-                          <span>
-                            {formatAmount(contract.monthly_rent)} /{" "}
-                            {contract.payment_frequency || "Monthly"}
-                          </span>
-                        </div>
-                        <button
-                          className="document-link"
-                          type="button"
-                          onClick={() =>
-                            void handleContractPreview(contract.id)
-                          }
-                        >
-                          Generate contract
-                        </button>
-                      </article>
-                    ))
-                  )}
+                <div className="section-heading"><h2>Contracts</h2><span>{filteredContracts.length} entries</span></div>
+                <div className="unit-toolbar contract-toolbar">
+                  <input value={contractSearch} onChange={(event) => { setContractSearch(event.target.value); setContractPage(1); }} placeholder="Search tenant or room" />
+                  <select value={contractStatusFilter} onChange={(event) => { setContractStatusFilter(event.target.value); setContractPage(1); }}><option>All</option><option>Active</option><option>Expired</option><option>Cancelled</option><option>Draft</option></select>
+                  <select value={contractPageSize} onChange={(event) => { setContractPageSize(Number(event.target.value)); setContractPage(1); }}><option value="10">10 entries</option><option value="25">25 entries</option><option value="50">50 entries</option></select>
                 </div>
+                <div className="unit-table-wrap"><table className="unit-table contract-table"><thead><tr><th>No.</th><th>Customer</th><th>Room</th><th>Type</th><th>Start</th><th>End</th><th>Price</th><th>Invoice</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+                  {visibleContracts.length === 0 ? <tr><td colSpan={12}>No contracts match these filters.</td></tr> : visibleContracts.map((contract, index) => {
+                    const tenant = tenants.find((item) => String(item.id) === String(contract.tenant_id));
+                    const unit = units.find((item) => String(item.id) === String(contract.unit_id));
+                    const invoice = invoices.find((item) => String(item.contract_id) === String(contract.id));
+                    const paid = invoice ? payments.filter((item) => String(item.invoice_id) === String(invoice.id)).reduce((total, item) => total + item.amount, 0) : 0;
+                    const balance = Math.max(0, (invoice?.amount ?? 0) - paid);
+                    return <tr key={contract.id}><td>{(contractPage - 1) * contractPageSize + index + 1}</td><td>{tenant?.full_name || tenant?.company_name || "Unknown tenant"}</td><td>{unit?.number || "-"}</td><td><span className="code-tag">{contract.contract_type}</span></td><td>{contract.start_date}</td><td>{contract.end_date || "-"}</td><td>{formatAmount(contract.monthly_rent)}</td><td>{formatAmount(invoice?.amount ?? 0)}</td><td>{formatAmount(paid)}</td><td>{formatAmount(balance)}</td><td><span className={`table-status ${contract.status.toLowerCase()}`}>{contract.status}</span></td><td><button className="table-action edit" type="button" onClick={() => void handleContractPreview(contract.id)}>View</button>{contract.status === "Active" && <><button className="table-action rent" type="button" onClick={() => payContractInvoice(contract.id)}>Pay</button><button className="table-action rent" type="button" onClick={() => upgradeContract(contract)}>Upgrade</button><button className="table-action delete" type="button" onClick={() => void terminateContract(contract)}>Terminate</button></>}</td></tr>;
+                  })}
+                </tbody></table></div>
+                <div className="pagination"><span>Showing {visibleContracts.length ? (contractPage - 1) * contractPageSize + 1 : 0} to {Math.min(contractPage * contractPageSize, filteredContracts.length)} of {filteredContracts.length}</span><div><button type="button" disabled={contractPage === 1} onClick={() => setContractPage((page) => page - 1)}>Previous</button><strong>{contractPage}</strong><button type="button" disabled={contractPage >= contractPageCount} onClick={() => setContractPage((page) => page + 1)}>Next</button></div></div>
               </div>
             </div>
 

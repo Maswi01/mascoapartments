@@ -261,6 +261,23 @@ func (s *Service) GetContract(id uint64) (*Contract, error) {
 	return contract, nil
 }
 
+func (s *Service) UpdateContract(contract Contract) (*Contract, error) {
+	existing, ok := s.contracts[contract.ID]
+	if !ok {
+		return nil, ErrContractNotFound
+	}
+	contract.BuildingID = existing.BuildingID
+	contract.UnitID = existing.UnitID
+	contract.TenantID = existing.TenantID
+	contract.CreatedAt = existing.CreatedAt
+	contract.UpdatedAt = time.Now()
+	s.contracts[contract.ID] = &contract
+	if unit, ok := s.units[contract.UnitID]; ok && contract.Status == "Cancelled" {
+		unit.Status = "Vacant"
+	}
+	return &contract, nil
+}
+
 func (s *Service) CreateDocument(document Document) (*Document, error) {
 	if document.ContractID == 0 || document.Name == "" || document.Path == "" {
 		return nil, errors.New("contract id, document name, and path are required")

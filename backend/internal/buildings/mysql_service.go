@@ -318,6 +318,22 @@ func (s *MySQLService) GetContract(id uint64) (*Contract, error) {
 	return contract, nil
 }
 
+func (s *MySQLService) UpdateContract(contract Contract) (*Contract, error) {
+	if contract.ID == 0 || contract.Status == "" {
+		return nil, errors.New("contract id and status are required")
+	}
+	_, err := s.db.Exec(`UPDATE contracts SET end_date = NULLIF(?, ''), amount = ?, payment_frequency = ?, status = ?, updated_at = ? WHERE id = ?`, contract.EndDate, contract.MonthlyRent, contract.PaymentFrequency, contract.Status, time.Now(), contract.ID)
+	if err != nil {
+		return nil, fmt.Errorf("update contract: %w", err)
+	}
+	if contract.Status == "Cancelled" {
+		if _, err := s.db.Exec(`UPDATE units u JOIN contracts c ON c.unit_id = u.id SET u.status = 'Vacant' WHERE c.id = ?`, contract.ID); err != nil {
+			return nil, fmt.Errorf("mark unit vacant: %w", err)
+		}
+	}
+	return s.GetContract(contract.ID)
+}
+
 func (s *MySQLService) CreateDocument(document Document) (*Document, error) {
 	if document.ContractID == 0 || document.Name == "" || document.Path == "" {
 		return nil, errors.New("contract id, document name, and path are required")

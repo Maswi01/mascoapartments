@@ -34,6 +34,7 @@ type ServiceAPI interface {
 	CreateContract(Contract) (*Contract, error)
 	ListContracts(uint64) []*Contract
 	GetContract(uint64) (*Contract, error)
+	UpdateContract(Contract) (*Contract, error)
 	CreateDocument(Document) (*Document, error)
 	ListDocumentsByContract(uint64) []*Document
 	CreateInvoice(Invoice) (*Invoice, error)
@@ -63,6 +64,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/tenants/{id}", h.deleteTenant)
 	mux.HandleFunc("GET /api/v1/contracts", h.listContracts)
 	mux.HandleFunc("POST /api/v1/contracts", h.createContract)
+	mux.HandleFunc("PUT /api/v1/contracts/{id}", h.updateContract)
 	mux.HandleFunc("GET /api/v1/contracts/{id}/preview", h.previewContract)
 	mux.HandleFunc("POST /api/v1/contracts/{id}/invoices", h.generateInvoice)
 	mux.HandleFunc("GET /api/v1/contracts/{id}/documents", h.listDocuments)
@@ -279,6 +281,27 @@ func (h *Handler) createContract(writer http.ResponseWriter, request *http.Reque
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusCreated)
 	json.NewEncoder(writer).Encode(created)
+}
+
+func (h *Handler) updateContract(writer http.ResponseWriter, request *http.Request) {
+	id, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	var contract Contract
+	if err := json.NewDecoder(request.Body).Decode(&contract); err != nil {
+		writeJSONError(writer, http.StatusBadRequest, "invalid contract payload")
+		return
+	}
+	contract.ID = id
+	updated, err := h.service.UpdateContract(contract)
+	if err != nil {
+		writeJSONError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(writer).Encode(updated)
 }
 
 var contractPreviewTemplate = template.Must(template.New("contract").Parse(`<!doctype html>
