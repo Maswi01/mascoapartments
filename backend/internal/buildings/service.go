@@ -13,6 +13,7 @@ var (
 	ErrTenantNotFound     = errors.New("tenant not found")
 	ErrTenantHasContracts = errors.New("cannot delete a tenant with rented units")
 	ErrContractNotFound   = errors.New("contract not found")
+	ErrContractHasRecords = errors.New("cannot delete a contract with invoices or signed documents")
 	ErrInvoiceNotFound    = errors.New("invoice not found")
 )
 
@@ -276,6 +277,28 @@ func (s *Service) UpdateContract(contract Contract) (*Contract, error) {
 		unit.Status = "Vacant"
 	}
 	return &contract, nil
+}
+
+func (s *Service) DeleteContract(id uint64) error {
+	contract, ok := s.contracts[id]
+	if !ok {
+		return ErrContractNotFound
+	}
+	for _, invoice := range s.invoices {
+		if invoice.ContractID == id {
+			return ErrContractHasRecords
+		}
+	}
+	for _, document := range s.documents {
+		if document.ContractID == id {
+			return ErrContractHasRecords
+		}
+	}
+	if unit, ok := s.units[contract.UnitID]; ok {
+		unit.Status = "Vacant"
+	}
+	delete(s.contracts, id)
+	return nil
 }
 
 func (s *Service) CreateDocument(document Document) (*Document, error) {

@@ -35,6 +35,7 @@ type ServiceAPI interface {
 	ListContracts(uint64) []*Contract
 	GetContract(uint64) (*Contract, error)
 	UpdateContract(Contract) (*Contract, error)
+	DeleteContract(uint64) error
 	CreateDocument(Document) (*Document, error)
 	ListDocumentsByContract(uint64) []*Document
 	CreateInvoice(Invoice) (*Invoice, error)
@@ -65,6 +66,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/contracts", h.listContracts)
 	mux.HandleFunc("POST /api/v1/contracts", h.createContract)
 	mux.HandleFunc("PUT /api/v1/contracts/{id}", h.updateContract)
+	mux.HandleFunc("DELETE /api/v1/contracts/{id}", h.deleteContract)
 	mux.HandleFunc("GET /api/v1/contracts/{id}/preview", h.previewContract)
 	mux.HandleFunc("POST /api/v1/contracts/{id}/invoices", h.generateInvoice)
 	mux.HandleFunc("GET /api/v1/contracts/{id}/documents", h.listDocuments)
@@ -303,6 +305,19 @@ func (h *Handler) updateContract(writer http.ResponseWriter, request *http.Reque
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(writer).Encode(updated)
+}
+
+func (h *Handler) deleteContract(writer http.ResponseWriter, request *http.Request) {
+	id, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	if err := h.service.DeleteContract(id); err != nil {
+		writeJSONError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 var contractPreviewTemplate = template.Must(template.New("contract").Parse(`<!doctype html>

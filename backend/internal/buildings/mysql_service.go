@@ -322,7 +322,14 @@ func (s *MySQLService) UpdateContract(contract Contract) (*Contract, error) {
 	if contract.ID == 0 || contract.Status == "" {
 		return nil, errors.New("contract id and status are required")
 	}
-	_, err := s.db.Exec(`UPDATE contracts SET end_date = NULLIF(?, ''), amount = ?, payment_frequency = ?, status = ?, updated_at = ? WHERE id = ?`, contract.EndDate, contract.MonthlyRent, contract.PaymentFrequency, contract.Status, time.Now(), contract.ID)
+	description := contract.Terms
+	if contract.Notes != "" {
+		if description != "" {
+			description += "\n\n"
+		}
+		description += contract.Notes
+	}
+	_, err := s.db.Exec(`UPDATE contracts SET contract_type = ?, start_date = ?, end_date = NULLIF(?, ''), amount = ?, payment_frequency = ?, status = ?, description = ?, updated_at = ? WHERE id = ?`, contract.ContractType, contract.StartDate, contract.EndDate, contract.MonthlyRent, contract.PaymentFrequency, contract.Status, description, time.Now(), contract.ID)
 	if err != nil {
 		return nil, fmt.Errorf("update contract: %w", err)
 	}
@@ -332,6 +339,35 @@ func (s *MySQLService) UpdateContract(contract Contract) (*Contract, error) {
 		}
 	}
 	return s.GetContract(contract.ID)
+}
+
+func (s *MySQLService) DeleteContract(id uint64) error {
+	var invoiceCount, documentCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE contract_id = ?`, id).Scan(&invoiceCount); err != nil {
+		return fmt.Errorf("check contract invoices: %w", err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM documents WHERE entity_type = 'contract' AND entity_id = ?`, id).Scan(&documentCount); err != nil {
+		return fmt.Errorf("check contract documents: %w", err)
+	}
+	if invoiceCount > 0 || documentCount > 0 {
+		return ErrContractHasRecords
+	}
+	contract, err := s.GetContract(id)
+	if err != nil {
+		return err
+	}
+	result, err := s.db.Exec(`DELETE FROM contracts WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete contract: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil || count == 0 {
+		return ErrContractNotFound
+	}
+	if _, err := s.db.Exec(`UPDATE units SET status = 'Vacant' WHERE id = ?`, contract.UnitID); err != nil {
+		return fmt.Errorf("mark unit vacant: %w", err)
+	}
+	return nil
 }
 
 func (s *MySQLService) CreateDocument(document Document) (*Document, error) {

@@ -120,3 +120,16 @@ func TestServiceRejectsDeletingTenantWithContract(t *testing.T) {
 		t.Fatalf("tenant should remain after rejected delete: %v", err)
 	}
 }
+
+func TestServiceRejectsDeletingContractWithInvoice(t *testing.T) {
+	service := NewService()
+	service.contracts[1] = &Contract{ID: 1, UnitID: 1, TenantID: 1}
+	service.invoices[1] = &Invoice{ID: 1, ContractID: 1}
+
+	if err := service.DeleteContract(1); err != ErrContractHasRecords {
+		t.Fatalf("expected contract delete to fail, got %v", err)
+	}
+	if _, err := service.GetContract(1); err != nil {
+		t.Fatalf("contract should remain after rejected delete: %v", err)
+	}
+}

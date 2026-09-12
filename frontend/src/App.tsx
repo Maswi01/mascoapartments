@@ -146,6 +146,8 @@ type ContractRecord = {
   payment_method?: string;
   payment_frequency?: string;
   utility_responsibility?: string;
+  terms?: string;
+  notes?: string;
   status: string;
 };
 
@@ -239,12 +241,13 @@ function App() {
   const [editingUnitID, setEditingUnitID] = useState<string | null>(null);
   const [rentUnitID, setRentUnitID] = useState<string | null>(null);
   const [contractForm, setContractForm] = useState(defaultContractForm);
-  const [contractPageMode, setContractPageMode] = useState<"list" | "create" | "upgrade" | "document">("list");
+  const [contractPageMode, setContractPageMode] = useState<"list" | "create" | "edit" | "upgrade" | "document">("list");
   const [contractSearch, setContractSearch] = useState("");
   const [contractStatusFilter, setContractStatusFilter] = useState("All");
   const [contractPage, setContractPage] = useState(1);
   const [contractPageSize, setContractPageSize] = useState(10);
   const [upgradingContractID, setUpgradingContractID] = useState<string | null>(null);
+  const [editingContractID, setEditingContractID] = useState<string | null>(null);
   const [contractUpgradeForm, setContractUpgradeForm] = useState(defaultContractUpgradeForm);
   const [paymentForm, setPaymentForm] = useState(defaultPaymentForm);
   const [documentContractID, setDocumentContractID] = useState("");
@@ -282,6 +285,7 @@ function App() {
     if (path.includes("/invoice")) setTenantPageMode("invoice");
     if (path === "/contracts") setContractPageMode("list");
     if (path === "/contracts/new") setContractPageMode("create");
+    if (path.includes("/edit")) setContractPageMode("edit");
     if (path.includes("/upgrade")) setContractPageMode("upgrade");
     if (path.includes("/document")) setContractPageMode("document");
   };
@@ -792,8 +796,8 @@ function App() {
     const rentNotes = rentUnitID && amountNumber(contractForm.prepaid_amount) > 0
       ? `${contractForm.notes}${contractForm.notes ? "\n" : ""}Prepaid amount: ${formatAmount(contractForm.prepaid_amount)}`
       : contractForm.notes
-    const response = await apiFetch("/contracts", {
-      method: "POST",
+    const response = await apiFetch(editingContractID ? `/contracts/${editingContractID}` : "/contracts", {
+      method: editingContractID ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...contractForm,
@@ -808,6 +812,12 @@ function App() {
     if (response.ok) {
       await loadData();
       setContractForm(defaultContractForm);
+      if (editingContractID) {
+        setEditingContractID(null);
+        goTo("/contracts");
+        void showSuccess("Contract updated");
+        return;
+      }
       if (rentUnitID) {
         setRentUnitID(null)
         goTo('/units')
@@ -818,6 +828,45 @@ function App() {
     } else {
       await showRequestError(response, "Could not save contract.");
     }
+  };
+
+  const editContract = (contract: ContractRecord) => {
+    setEditingContractID(contract.id);
+    setContractForm({
+      ...defaultContractForm,
+      tenant_id: String(contract.tenant_id),
+      unit_id: String(contract.unit_id),
+      contract_type: contract.contract_type,
+      start_date: dateOnly(contract.start_date),
+      end_date: dateOnly(contract.end_date),
+      monthly_rent: formatAmount(contract.monthly_rent),
+      payment_method: contract.payment_method || "Bank Transfer",
+      payment_frequency: contract.payment_frequency || "Monthly",
+      utility_responsibility: contract.utility_responsibility || defaultContractForm.utility_responsibility,
+      terms: contract.terms || "",
+      status: contract.status,
+      notes: contract.notes || "",
+    });
+    goTo(`/contracts/${contract.id}/edit`);
+  };
+
+  const deleteContract = async (contract: ContractRecord) => {
+    const result = await Swal.fire({
+      icon: "warning",
+      title: "Delete contract permanently?",
+      text: "Use Terminate if you need to preserve contract history. Contracts with invoices or signed documents cannot be deleted.",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      confirmButtonColor: "#d9574f",
+    });
+    if (!result.isConfirmed) return;
+    const response = await apiFetch(`/contracts/${contract.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      await showRequestError(response, "Could not delete contract.");
+      return;
+    }
+    await loadData();
+    void showSuccess("Contract deleted");
   };
 
   const terminateContract = async (contract: ContractRecord) => {
@@ -1268,6 +1317,8 @@ function App() {
     setContractPage(1);
     setContractPageSize(10);
     setUpgradingContractID(null);
+    setEditingContractID(null);
+    setContractForm(defaultContractForm);
     setContractUpgradeForm(defaultContractUpgradeForm);
   };
 
@@ -2663,13 +2714,14 @@ function App() {
                 className="panel form-panel"
                 onSubmit={handleContractSubmit}
               >
-                <div className="section-heading"><h2>Add contract</h2><button className="secondary-button" type="button" onClick={() => goTo("/contracts")}>Back to list</button></div>
+                <div className="section-heading"><h2>{contractPageMode === "edit" ? "Edit contract" : "Add contract"}</h2><button className="secondary-button" type="button" onClick={() => { setEditingContractID(null); setContractForm(defaultContractForm); goTo("/contracts"); }}>Back to list</button></div>
                 <label>
                   Tenant
                   <select
                     name="tenant_id"
                     value={contractForm.tenant_id}
                     onChange={handleContractChange}
+                    disabled={contractPageMode === "edit"}
                   >
                     <option value="">Select tenant</option>
                     {tenants.map((tenant) => (
@@ -2685,7 +2737,7 @@ function App() {
                     name="unit_id"
                     value={contractForm.unit_id}
                     onChange={handleContractChange}
-                    disabled={selectedBuildingID === "hq"}
+                    disabled={selectedBuildingID === "hq" || contractPageMode === "edit"}
                   >
                     <option value="">
                       {selectedBuildingID === "hq"
@@ -2835,7 +2887,7 @@ function App() {
                     const balance = Math.max(0, (invoice?.amount ?? 0) - paid);
                     const remainingDays = contract.end_date ? daysUntil(contract.end_date) : null;
                     const timeLeft = contract.status === "Cancelled" ? "Terminated" : remainingDays === null ? "Open" : remainingDays < 0 ? "Expired" : remainingDays === 0 ? "Ends today" : `${remainingDays} days`;
-                    return <tr key={contract.id}><td>{(contractPage - 1) * contractPageSize + index + 1}</td><td>{tenant?.full_name || tenant?.company_name || "Unknown tenant"}</td><td>{unit?.number || "-"}</td><td><span className="code-tag">{contract.contract_type}</span></td><td>{dateOnly(contract.start_date)}</td><td>{dateOnly(contract.end_date) || "-"}</td><td><span className={`time-left ${remainingDays !== null && remainingDays < 0 ? "expired" : ""}`}>{timeLeft}</span></td><td>{formatAmount(contract.monthly_rent)}</td><td>{formatAmount(invoice?.amount ?? 0)}</td><td>{formatAmount(paid)}</td><td>{formatAmount(balance)}</td><td><span className={`table-status ${contract.status.toLowerCase()}`}>{contract.status}</span></td><td><div className="contract-actions-grid"><button type="button" onClick={() => void handleContractView(contract.id)}>View</button><button type="button" onClick={() => void handleContractPreview(contract.id)}>Generated</button><button type="button" onClick={() => attachSignedContract(contract.id)}>Attach signed</button>{contract.status === "Active" && <><button type="button" onClick={() => payContractInvoice(contract.id)}>Pay</button><button type="button" onClick={() => upgradeContract(contract)}>Upgrade</button><button className="danger" type="button" onClick={() => void terminateContract(contract)}>Terminate</button></>}</div></td></tr>;
+                    return <tr key={contract.id}><td>{(contractPage - 1) * contractPageSize + index + 1}</td><td>{tenant?.full_name || tenant?.company_name || "Unknown tenant"}</td><td>{unit?.number || "-"}</td><td><span className="code-tag">{contract.contract_type}</span></td><td>{dateOnly(contract.start_date)}</td><td>{dateOnly(contract.end_date) || "-"}</td><td><span className={`time-left ${remainingDays !== null && remainingDays < 0 ? "expired" : ""}`}>{timeLeft}</span></td><td>{formatAmount(contract.monthly_rent)}</td><td>{formatAmount(invoice?.amount ?? 0)}</td><td>{formatAmount(paid)}</td><td>{formatAmount(balance)}</td><td><span className={`table-status ${contract.status.toLowerCase()}`}>{contract.status}</span></td><td><div className="contract-actions-grid"><button type="button" onClick={() => void handleContractView(contract.id)}>View</button><button type="button" onClick={() => editContract(contract)}>Edit</button><button type="button" onClick={() => void handleContractPreview(contract.id)}>Generated</button><button type="button" onClick={() => attachSignedContract(contract.id)}>Attach signed</button>{contract.status === "Active" && <><button type="button" onClick={() => payContractInvoice(contract.id)}>Pay</button><button type="button" onClick={() => upgradeContract(contract)}>Upgrade</button><button className="danger" type="button" onClick={() => void terminateContract(contract)}>Terminate</button></>}<button className="danger" type="button" onClick={() => void deleteContract(contract)}>Delete</button></div></td></tr>;
                   })}
                 </tbody></table></div>
                 <div className="pagination"><span>Showing {visibleContracts.length ? (contractPage - 1) * contractPageSize + 1 : 0} to {Math.min(contractPage * contractPageSize, filteredContracts.length)} of {filteredContracts.length}</span><div><button type="button" disabled={contractPage === 1} onClick={() => setContractPage((page) => page - 1)}>Previous</button><strong>{contractPage}</strong><button type="button" disabled={contractPage >= contractPageCount} onClick={() => setContractPage((page) => page + 1)}>Next</button></div></div>
