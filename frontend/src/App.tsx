@@ -275,6 +275,8 @@ function App() {
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("All");
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoicePageSize, setInvoicePageSize] = useState(10);
+  const [invoicePageMode, setInvoicePageMode] = useState<"list" | "payment">("list");
+  const [payingInvoiceID, setPayingInvoiceID] = useState<string | null>(null);
   const [paymentForm, setPaymentForm] = useState(defaultPaymentForm);
   const [paymentPageMode, setPaymentPageMode] = useState<"list" | "create">("list");
   const [paymentTenantID, setPaymentTenantID] = useState("");
@@ -319,12 +321,14 @@ function App() {
     if (path === "/tenants/new") setTenantPageMode("create");
     if (path === "/tenants") setTenantPageMode("list");
     if (path === "/tenants/edit") setTenantPageMode("edit");
-    if (path.includes("/invoice")) setTenantPageMode("invoice");
+    if (path.startsWith("/tenants/") && path.includes("/invoice")) setTenantPageMode("invoice");
     if (path === "/contracts") setContractPageMode("list");
     if (path === "/contracts/new") setContractPageMode("create");
     if (path.includes("/edit")) setContractPageMode("edit");
     if (path.includes("/upgrade")) setContractPageMode("upgrade");
     if (path.includes("/document")) setContractPageMode("document");
+    if (path === "/invoices") setInvoicePageMode("list");
+    if (/^\/invoices\/[^/]+\/payment$/.test(path)) setInvoicePageMode("payment");
     if (path === "/payments") setPaymentPageMode("list");
     if (path === "/payments/new") setPaymentPageMode("create");
   };
@@ -1070,8 +1074,9 @@ function App() {
     if (balance === 0) return;
     setPaymentTenantID(String(invoice.tenant_id));
     setPaymentForm((current) => ({ ...current, invoice_id: invoice.id, amount: formatAmount(balance) }));
-    setView("payments");
-    goTo("/payments/new");
+    setPayingInvoiceID(invoice.id);
+    setView("invoices");
+    goTo(`/invoices/${invoice.id}/payment`);
   };
 
   const showInvoicePayments = async (invoice: InvoiceRecord) => {
@@ -1100,6 +1105,7 @@ function App() {
 
   const handlePaymentSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    const returnToInvoices = view === "invoices" && invoicePageMode === "payment";
     const response = await apiFetch("/payments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1116,7 +1122,8 @@ function App() {
     await loadData();
     setPaymentForm(defaultPaymentForm);
     setPaymentTenantID("");
-    goTo("/payments");
+    setPayingInvoiceID(null);
+    goTo(returnToInvoices ? "/invoices" : "/payments");
     void showSuccess("Payment recorded");
   };
 
@@ -1516,6 +1523,8 @@ function App() {
     setInvoiceStatusFilter("All");
     setInvoicePage(1);
     setInvoicePageSize(10);
+    setPayingInvoiceID(null);
+    setPaymentForm(defaultPaymentForm);
   };
 
   const resetPaymentList = () => {
@@ -1549,7 +1558,10 @@ function App() {
       resetContractList();
       goTo("/contracts");
     }
-    if (nextView === "invoices") resetInvoiceList();
+    if (nextView === "invoices") {
+      resetInvoiceList();
+      goTo("/invoices");
+    }
     if (nextView === "payments") {
       resetPaymentList();
       goTo("/payments");
@@ -3134,8 +3146,29 @@ function App() {
         )}
 
         {view === "invoices" && (
-          <div className="invoices-workspace">
-            <div className="panel list-panel">
+          <div className={`invoices-workspace ${invoicePageMode}`}>
+            {invoicePageMode === "payment" && (() => {
+              const invoice = invoices.find((item) => String(item.id) === String(payingInvoiceID || paymentForm.invoice_id));
+              const tenant = tenants.find((item) => String(item.id) === String(invoice?.tenant_id));
+              const unit = units.find((item) => String(item.id) === String(invoice?.unit_id));
+              const balance = invoice ? Math.max(0, invoice.amount - invoicePaidAmount(invoice.id)) : 0;
+              return <form className="panel form-panel invoice-payment-panel" onSubmit={handlePaymentSubmit}>
+                <div className="section-heading"><h2>Record invoice payment</h2><button className="secondary-button" type="button" onClick={() => { setPayingInvoiceID(null); setPaymentForm(defaultPaymentForm); goTo("/invoices"); }}>Back to invoices</button></div>
+                <div className="payment-context">
+                  <div><span>Customer</span><strong>{tenant?.full_name || tenant?.company_name || "-"}</strong></div>
+                  <div><span>Unit</span><strong>{unit?.number || "-"}</strong></div>
+                  <div><span>Invoice</span><strong>{invoice?.number || "-"}</strong></div>
+                  <div><span>Balance</span><strong>{formatAmount(balance)}</strong></div>
+                </div>
+                <label>Amount received<input name="amount" inputMode="decimal" value={paymentForm.amount} onChange={(event) => setPaymentForm((current) => ({ ...current, amount: formatAmount(event.target.value) }))} required /></label>
+                <div className="inline-fields"><label>Payment date<input name="payment_date" type="date" value={paymentForm.payment_date} onChange={handlePaymentChange} required /></label><label>Method<select name="payment_method" value={paymentForm.payment_method} onChange={handlePaymentChange}><option>Bank Transfer</option><option>Cash</option><option>Mobile Money</option><option>Card</option><option>Cheque</option></select></label></div>
+                <label>Payment reference<input name="payment_reference" value={paymentForm.payment_reference} onChange={handlePaymentChange} placeholder="Bank or receipt reference" required /></label>
+                <label>Receipt number<input name="receipt_number" value={paymentForm.receipt_number} onChange={handlePaymentChange} placeholder="Optional receipt number" /></label>
+                <label>Notes<textarea name="notes" value={paymentForm.notes} onChange={handlePaymentChange} placeholder="Optional payment notes" /></label>
+                <button className="primary-button" type="submit">Record payment</button>
+              </form>;
+            })()}
+            {invoicePageMode === "list" && <div className="panel list-panel">
               <div className="section-heading"><h2>Invoices</h2><span>{filteredInvoices.length} entries</span></div>
               <div className="unit-toolbar invoice-toolbar">
                 <input value={invoiceSearch} onChange={(event) => { setInvoiceSearch(event.target.value); setInvoicePage(1); }} placeholder="Search invoice, tenant, or room" />
@@ -3159,7 +3192,7 @@ function App() {
                 </table>
               </div>
               <div className="pagination"><span>Showing {visibleInvoices.length ? (invoicePage - 1) * invoicePageSize + 1 : 0} to {Math.min(invoicePage * invoicePageSize, filteredInvoices.length)} of {filteredInvoices.length}</span><div><button type="button" disabled={invoicePage === 1} onClick={() => setInvoicePage((page) => page - 1)}>Previous</button><strong>{invoicePage}</strong><button type="button" disabled={invoicePage >= invoicePageCount} onClick={() => setInvoicePage((page) => page + 1)}>Next</button></div></div>
-            </div>
+            </div>}
           </div>
         )}
 

@@ -454,6 +454,13 @@ func (s *MySQLService) CreatePayment(payment Payment) (*Payment, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load invoice: %w", err)
 	}
+	var paid float64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM payments WHERE invoice_id = ?`, payment.InvoiceID).Scan(&paid); err != nil {
+		return nil, fmt.Errorf("load invoice balance: %w", err)
+	}
+	if payment.Amount > invoice.Amount-paid {
+		return nil, errors.New("payment exceeds the invoice balance")
+	}
 	var methodID uint64
 	if err := s.db.QueryRow(`SELECT id FROM payment_methods WHERE name = ?`, payment.PaymentMethod).Scan(&methodID); err != nil {
 		return nil, errors.New("payment method not found")
@@ -468,7 +475,6 @@ func (s *MySQLService) CreatePayment(payment Payment) (*Payment, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read payment id: %w", err)
 	}
-	var paid float64
 	if err := s.db.QueryRow(`SELECT COALESCE(SUM(amount), 0) FROM payments WHERE invoice_id = ?`, payment.InvoiceID).Scan(&paid); err == nil {
 		status := "Partially Paid"
 		if paid >= invoice.Amount {

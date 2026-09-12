@@ -357,9 +357,30 @@ func (s *Service) CreatePayment(payment Payment) (*Payment, error) {
 	if payment.InvoiceID == 0 || payment.PaymentReference == "" || payment.Amount <= 0 || payment.PaymentMethod == "" {
 		return nil, errors.New("invoice, payment reference, amount, and payment method are required")
 	}
+	invoice, ok := s.invoices[payment.InvoiceID]
+	if !ok {
+		return nil, ErrInvoiceNotFound
+	}
+	paid := 0.0
+	for _, existing := range s.payments {
+		if existing.InvoiceID == payment.InvoiceID {
+			paid += existing.Amount
+		}
+	}
+	if payment.Amount > invoice.Amount-paid {
+		return nil, errors.New("payment exceeds the invoice balance")
+	}
 	payment.ID = uint64(len(s.payments) + 1)
+	payment.TenantID = invoice.TenantID
+	payment.BuildingID = invoice.BuildingID
+	payment.UnitID = invoice.UnitID
 	payment.CreatedAt = time.Now()
 	s.payments[payment.ID] = &payment
+	paid += payment.Amount
+	invoice.Status = "Partially Paid"
+	if paid >= invoice.Amount {
+		invoice.Status = "Paid"
+	}
 	return s.payments[payment.ID], nil
 }
 

@@ -133,3 +133,19 @@ func TestServiceRejectsDeletingContractWithInvoice(t *testing.T) {
 		t.Fatalf("contract should remain after rejected delete: %v", err)
 	}
 }
+
+func TestServicePaymentUsesInvoiceContextAndRejectsOverpayment(t *testing.T) {
+	service := NewService()
+	service.invoices[1] = &Invoice{ID: 1, TenantID: 2, BuildingID: 3, UnitID: 4, Amount: 1000, Status: "Pending"}
+
+	payment, err := service.CreatePayment(Payment{InvoiceID: 1, Amount: 600, PaymentMethod: "Cash", PaymentReference: "PAY-1"})
+	if err != nil {
+		t.Fatalf("create payment: %v", err)
+	}
+	if payment.TenantID != 2 || payment.BuildingID != 3 || payment.UnitID != 4 {
+		t.Fatalf("expected invoice context on payment, got tenant=%d building=%d unit=%d", payment.TenantID, payment.BuildingID, payment.UnitID)
+	}
+	if _, err := service.CreatePayment(Payment{InvoiceID: 1, Amount: 500, PaymentMethod: "Cash", PaymentReference: "PAY-2"}); err == nil {
+		t.Fatal("expected overpayment to be rejected")
+	}
+}
