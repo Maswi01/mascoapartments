@@ -69,6 +69,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/contracts/{id}/invoices", h.generateInvoice)
 	mux.HandleFunc("GET /api/v1/contracts/{id}/documents", h.listDocuments)
 	mux.HandleFunc("POST /api/v1/contracts/{id}/documents", h.uploadDocument)
+	mux.HandleFunc("GET /api/v1/contracts/{id}/documents/latest", h.latestDocument)
 	mux.HandleFunc("GET /api/v1/invoices", h.listInvoices)
 	mux.HandleFunc("POST /api/v1/invoices", h.createInvoice)
 	mux.HandleFunc("GET /api/v1/payments", h.listPayments)
@@ -451,6 +452,28 @@ func (h *Handler) uploadDocument(writer http.ResponseWriter, request *http.Reque
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusCreated)
 	json.NewEncoder(writer).Encode(document)
+}
+
+func (h *Handler) latestDocument(writer http.ResponseWriter, request *http.Request) {
+	contractID, ok := pathID(request)
+	if !ok {
+		writeJSONError(writer, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	documents := h.service.ListDocumentsByContract(contractID)
+	if len(documents) == 0 {
+		writeJSONError(writer, http.StatusNotFound, "signed contract not found")
+		return
+	}
+	document := documents[0]
+	directory := os.Getenv("UPLOAD_DIR")
+	if directory == "" {
+		directory = "uploads"
+	}
+	path := filepath.Join(directory, filepath.Base(document.Path))
+	writer.Header().Set("Content-Type", document.MimeType)
+	writer.Header().Set("Content-Disposition", `inline; filename="`+filepath.Base(document.OriginalName)+`"`)
+	http.ServeFile(writer, request, path)
 }
 
 func (h *Handler) listInvoices(writer http.ResponseWriter, request *http.Request) {

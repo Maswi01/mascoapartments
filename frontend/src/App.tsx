@@ -237,7 +237,7 @@ function App() {
   const [editingUnitID, setEditingUnitID] = useState<string | null>(null);
   const [rentUnitID, setRentUnitID] = useState<string | null>(null);
   const [contractForm, setContractForm] = useState(defaultContractForm);
-  const [contractPageMode, setContractPageMode] = useState<"list" | "create" | "upgrade">("list");
+  const [contractPageMode, setContractPageMode] = useState<"list" | "create" | "upgrade" | "document">("list");
   const [contractSearch, setContractSearch] = useState("");
   const [contractStatusFilter, setContractStatusFilter] = useState("All");
   const [contractPage, setContractPage] = useState(1);
@@ -281,6 +281,7 @@ function App() {
     if (path === "/contracts") setContractPageMode("list");
     if (path === "/contracts/new") setContractPageMode("create");
     if (path.includes("/upgrade")) setContractPageMode("upgrade");
+    if (path.includes("/document")) setContractPageMode("document");
   };
 
   const logout = () => {
@@ -1060,6 +1061,7 @@ function App() {
       setDocumentContractID("");
       setDocumentName("");
       setDocumentFile(null);
+      goTo("/contracts");
       void showSuccess("Signed contract uploaded");
     } else {
       await showRequestError(response, "Could not upload the document.");
@@ -1074,6 +1076,33 @@ function App() {
     }
     const documentURL = URL.createObjectURL(await response.blob());
     window.open(documentURL, "_blank", "noopener,noreferrer");
+  };
+
+  const handleContractView = async (contractID: string) => {
+    const documentsResponse = await apiFetch(`/contracts/${contractID}/documents`);
+    if (!documentsResponse.ok) {
+      await showRequestError(documentsResponse, "Could not load contract documents.");
+      return;
+    }
+    const payload = (await documentsResponse.json()) as { data?: unknown[] };
+    if (!payload.data?.length) {
+      await handleContractPreview(contractID);
+      return;
+    }
+    const response = await apiFetch(`/contracts/${contractID}/documents/latest`);
+    if (!response.ok) {
+      await showRequestError(response, "Could not open the signed contract.");
+      return;
+    }
+    const documentURL = URL.createObjectURL(await response.blob());
+    window.open(documentURL, "_blank", "noopener,noreferrer");
+  };
+
+  const attachSignedContract = (contractID: string) => {
+    setDocumentContractID(contractID);
+    setDocumentName("");
+    setDocumentFile(null);
+    goTo(`/contracts/${contractID}/document`);
   };
 
   if (!session) {
@@ -2607,6 +2636,26 @@ function App() {
                   </form>
                 );
               })()}
+              {contractPageMode === "document" && (
+                <form className="panel form-panel signed-contract-panel" onSubmit={handleDocumentSubmit}>
+                  <div className="section-heading">
+                    <h2>Attach signed contract</h2>
+                    <button className="secondary-button" type="button" onClick={() => goTo("/contracts")}>Back to list</button>
+                  </div>
+                  <p className="empty-state">
+                    Contract for {tenants.find((tenant) => String(tenant.id) === String(contracts.find((contract) => String(contract.id) === documentContractID)?.tenant_id))?.full_name || tenants.find((tenant) => String(tenant.id) === String(contracts.find((contract) => String(contract.id) === documentContractID)?.tenant_id))?.company_name || "tenant"}
+                  </p>
+                  <label>
+                    Document name
+                    <input value={documentName} onChange={(event) => setDocumentName(event.target.value)} placeholder="Signed lease agreement" />
+                  </label>
+                  <label>
+                    PDF or Word file
+                    <input type="file" required accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => setDocumentFile(event.target.files?.[0] ?? null)} />
+                  </label>
+                  <button className="primary-button" type="submit">Upload signed contract</button>
+                </form>
+              )}
               <form
                 className="panel form-panel"
                 onSubmit={handleContractSubmit}
@@ -2774,73 +2823,22 @@ function App() {
                   <select value={contractStatusFilter} onChange={(event) => { setContractStatusFilter(event.target.value); setContractPage(1); }}><option>All</option><option>Active</option><option>Expired</option><option>Cancelled</option><option>Draft</option></select>
                   <select value={contractPageSize} onChange={(event) => { setContractPageSize(Number(event.target.value)); setContractPage(1); }}><option value="10">10 entries</option><option value="25">25 entries</option><option value="50">50 entries</option></select>
                 </div>
-                <div className="unit-table-wrap"><table className="unit-table contract-table"><thead><tr><th>No.</th><th>Customer</th><th>Room</th><th>Type</th><th>Start</th><th>End</th><th>Price</th><th>Invoice</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-                  {visibleContracts.length === 0 ? <tr><td colSpan={12}>No contracts match these filters.</td></tr> : visibleContracts.map((contract, index) => {
+                <div className="unit-table-wrap"><table className="unit-table contract-table"><thead><tr><th>No.</th><th>Customer</th><th>Room</th><th>Type</th><th>Start</th><th>End</th><th>Time left</th><th>Price</th><th>Invoice</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+                  {visibleContracts.length === 0 ? <tr><td colSpan={13}>No contracts match these filters.</td></tr> : visibleContracts.map((contract, index) => {
                     const tenant = tenants.find((item) => String(item.id) === String(contract.tenant_id));
                     const unit = units.find((item) => String(item.id) === String(contract.unit_id));
                     const invoice = invoices.find((item) => String(item.contract_id) === String(contract.id));
                     const paid = invoice ? payments.filter((item) => String(item.invoice_id) === String(invoice.id)).reduce((total, item) => total + item.amount, 0) : 0;
                     const balance = Math.max(0, (invoice?.amount ?? 0) - paid);
-                    return <tr key={contract.id}><td>{(contractPage - 1) * contractPageSize + index + 1}</td><td>{tenant?.full_name || tenant?.company_name || "Unknown tenant"}</td><td>{unit?.number || "-"}</td><td><span className="code-tag">{contract.contract_type}</span></td><td>{contract.start_date}</td><td>{contract.end_date || "-"}</td><td>{formatAmount(contract.monthly_rent)}</td><td>{formatAmount(invoice?.amount ?? 0)}</td><td>{formatAmount(paid)}</td><td>{formatAmount(balance)}</td><td><span className={`table-status ${contract.status.toLowerCase()}`}>{contract.status}</span></td><td><button className="table-action edit" type="button" onClick={() => void handleContractPreview(contract.id)}>View</button>{contract.status === "Active" && <><button className="table-action rent" type="button" onClick={() => payContractInvoice(contract.id)}>Pay</button><button className="table-action rent" type="button" onClick={() => upgradeContract(contract)}>Upgrade</button><button className="table-action delete" type="button" onClick={() => void terminateContract(contract)}>Terminate</button></>}</td></tr>;
+                    const remainingDays = contract.end_date ? daysUntil(contract.end_date) : null;
+                    const timeLeft = contract.status === "Cancelled" ? "Terminated" : remainingDays === null ? "Open" : remainingDays < 0 ? "Expired" : remainingDays === 0 ? "Ends today" : `${remainingDays} days`;
+                    return <tr key={contract.id}><td>{(contractPage - 1) * contractPageSize + index + 1}</td><td>{tenant?.full_name || tenant?.company_name || "Unknown tenant"}</td><td>{unit?.number || "-"}</td><td><span className="code-tag">{contract.contract_type}</span></td><td>{contract.start_date}</td><td>{contract.end_date || "-"}</td><td><span className={`time-left ${remainingDays !== null && remainingDays < 0 ? "expired" : ""}`}>{timeLeft}</span></td><td>{formatAmount(contract.monthly_rent)}</td><td>{formatAmount(invoice?.amount ?? 0)}</td><td>{formatAmount(paid)}</td><td>{formatAmount(balance)}</td><td><span className={`table-status ${contract.status.toLowerCase()}`}>{contract.status}</span></td><td><details className="contract-actions"><summary>Actions</summary><div className="contract-actions-menu"><button type="button" onClick={() => void handleContractView(contract.id)}>View contract</button><button type="button" onClick={() => void handleContractPreview(contract.id)}>View generated</button><button type="button" onClick={() => attachSignedContract(contract.id)}>Attach signed</button>{contract.status === "Active" && <><button type="button" onClick={() => payContractInvoice(contract.id)}>Pay</button><button type="button" onClick={() => upgradeContract(contract)}>Upgrade</button><button className="danger" type="button" onClick={() => void terminateContract(contract)}>Terminate</button></>}</div></details></td></tr>;
                   })}
                 </tbody></table></div>
                 <div className="pagination"><span>Showing {visibleContracts.length ? (contractPage - 1) * contractPageSize + 1 : 0} to {Math.min(contractPage * contractPageSize, filteredContracts.length)} of {filteredContracts.length}</span><div><button type="button" disabled={contractPage === 1} onClick={() => setContractPage((page) => page - 1)}>Previous</button><strong>{contractPage}</strong><button type="button" disabled={contractPage >= contractPageCount} onClick={() => setContractPage((page) => page + 1)}>Next</button></div></div>
               </div>
             </div>
 
-            <div className="panel-grid">
-              <form
-                className="panel form-panel"
-                onSubmit={handleDocumentSubmit}
-              >
-                <h2>Attach signed contract</h2>
-                <label>
-                  Contract
-                  <select
-                    value={documentContractID}
-                    onChange={(event) =>
-                      setDocumentContractID(event.target.value)
-                    }
-                  >
-                    <option value="">Select contract</option>
-                    {contracts.map((contract) => (
-                      <option key={contract.id} value={contract.id}>
-                        {contract.contract_type} - {contract.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Document name
-                  <input
-                    value={documentName}
-                    onChange={(event) => setDocumentName(event.target.value)}
-                    placeholder="Signed lease agreement"
-                  />
-                </label>
-                <label>
-                  PDF or Word file
-                  <input
-                    type="file"
-                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    onChange={(event) =>
-                      setDocumentFile(event.target.files?.[0] ?? null)
-                    }
-                  />
-                </label>
-                <button className="primary-button" type="submit">
-                  Upload contract
-                </button>
-              </form>
-              <div className="panel list-panel">
-                <h2>Contract files</h2>
-                <p className="empty-state">
-                  Select a contract and attach the signed residential or
-                  commercial lease. Files are stored securely in the backend
-                  uploads directory.
-                </p>
-              </div>
-            </div>
           </>
         )}
 
