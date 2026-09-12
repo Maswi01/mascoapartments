@@ -24,6 +24,8 @@ const formatAmount = (value: string | number) => {
 
 const amountNumber = (value: string) => Number(value.replace(/,/g, "")) || 0;
 
+const dateOnly = (value: string) => value ? value.slice(0, 10) : "";
+
 const defaultForm = {
   name: "",
   code: "",
@@ -852,7 +854,7 @@ function App() {
     const contract = contracts.find((item) => item.id === upgradingContractID);
     if (!contract) return;
     const period = Math.max(1, Number(contractUpgradeForm.period) || 1);
-    const currentEndDate = new Date(`${contract.end_date}T00:00:00`);
+    const currentEndDate = new Date(`${dateOnly(contract.end_date)}T00:00:00`);
     const endDate = new Date(currentEndDate.getFullYear(), currentEndDate.getMonth() + period, currentEndDate.getDate()).toISOString().slice(0, 10);
     const response = await apiFetch(`/contracts/${contract.id}`, {
       method: "PUT",
@@ -1292,7 +1294,7 @@ function App() {
   const today = new Date();
   const daysUntil = (date: string) =>
     Math.ceil(
-      (new Date(`${date}T00:00:00`).getTime() - today.getTime()) / 86400000,
+      (new Date(`${dateOnly(date)}T00:00:00`).getTime() - today.getTime()) / 86400000,
     );
   const scopedContracts = contracts.filter(
     (contract) =>
@@ -1655,7 +1657,7 @@ function App() {
                     <div className="dashboard-row" key={contract.id}>
                       <strong>{contract.tenant_id}</strong>
                       <span>{contract.unit_id}</span>
-                      <span>{contract.end_date}</span>
+                      <span>{dateOnly(contract.end_date)}</span>
                       <button
                         className="row-action"
                         onClick={() => showView("contracts")}
@@ -1678,7 +1680,7 @@ function App() {
                     <div className="dashboard-row" key={contract.id}>
                       <strong>{contract.tenant_id}</strong>
                       <span>{contract.unit_id}</span>
-                      <span>{contract.end_date}</span>
+                      <span>{dateOnly(contract.end_date)}</span>
                       <button
                         className="row-action"
                         onClick={() => showView("contracts")}
@@ -2620,11 +2622,12 @@ function App() {
                 const contract = contracts.find((item) => item.id === upgradingContractID);
                 const unit = units.find((item) => String(item.id) === String(contract?.unit_id));
                 const period = Math.max(1, Number(contractUpgradeForm.period) || 1);
-                const endDate = contract?.end_date ? new Date(new Date(`${contract.end_date}T00:00:00`).getFullYear(), new Date(`${contract.end_date}T00:00:00`).getMonth() + period, new Date(`${contract.end_date}T00:00:00`).getDate()).toISOString().slice(0, 10) : "";
+                const currentEndDate = contract?.end_date ? new Date(`${dateOnly(contract.end_date)}T00:00:00`) : null;
+                const endDate = currentEndDate ? new Date(currentEndDate.getFullYear(), currentEndDate.getMonth() + period, currentEndDate.getDate()).toISOString().slice(0, 10) : "";
                 return (
                   <form className="panel form-panel contract-upgrade-panel" onSubmit={handleContractUpgradeSubmit}>
                     <div className="section-heading"><h2>Upgrade tenant contract</h2><button className="secondary-button" type="button" onClick={() => goTo("/contracts")}>Back to list</button></div>
-                    <p className="empty-state">{unit?.number || "Unit"} · Current ending date: {contract?.end_date || "-"}</p>
+                    <p className="empty-state">{unit?.number || "Unit"} · Current ending date: {dateOnly(contract?.end_date || "") || "-"}</p>
                     <label>Monthly price<input value={formatAmount(contract?.monthly_rent ?? 0)} readOnly /></label>
                     <label>Add period (months)<input type="number" min="1" name="period" value={contractUpgradeForm.period} onChange={(event) => setContractUpgradeForm((current) => ({ ...current, period: event.target.value }))} required /></label>
                     <label>New ending date<input value={endDate} readOnly /></label>
@@ -2832,7 +2835,7 @@ function App() {
                     const balance = Math.max(0, (invoice?.amount ?? 0) - paid);
                     const remainingDays = contract.end_date ? daysUntil(contract.end_date) : null;
                     const timeLeft = contract.status === "Cancelled" ? "Terminated" : remainingDays === null ? "Open" : remainingDays < 0 ? "Expired" : remainingDays === 0 ? "Ends today" : `${remainingDays} days`;
-                    return <tr key={contract.id}><td>{(contractPage - 1) * contractPageSize + index + 1}</td><td>{tenant?.full_name || tenant?.company_name || "Unknown tenant"}</td><td>{unit?.number || "-"}</td><td><span className="code-tag">{contract.contract_type}</span></td><td>{contract.start_date}</td><td>{contract.end_date || "-"}</td><td><span className={`time-left ${remainingDays !== null && remainingDays < 0 ? "expired" : ""}`}>{timeLeft}</span></td><td>{formatAmount(contract.monthly_rent)}</td><td>{formatAmount(invoice?.amount ?? 0)}</td><td>{formatAmount(paid)}</td><td>{formatAmount(balance)}</td><td><span className={`table-status ${contract.status.toLowerCase()}`}>{contract.status}</span></td><td><details className="contract-actions"><summary>Actions</summary><div className="contract-actions-menu"><button type="button" onClick={() => void handleContractView(contract.id)}>View contract</button><button type="button" onClick={() => void handleContractPreview(contract.id)}>View generated</button><button type="button" onClick={() => attachSignedContract(contract.id)}>Attach signed</button>{contract.status === "Active" && <><button type="button" onClick={() => payContractInvoice(contract.id)}>Pay</button><button type="button" onClick={() => upgradeContract(contract)}>Upgrade</button><button className="danger" type="button" onClick={() => void terminateContract(contract)}>Terminate</button></>}</div></details></td></tr>;
+                    return <tr key={contract.id}><td>{(contractPage - 1) * contractPageSize + index + 1}</td><td>{tenant?.full_name || tenant?.company_name || "Unknown tenant"}</td><td>{unit?.number || "-"}</td><td><span className="code-tag">{contract.contract_type}</span></td><td>{dateOnly(contract.start_date)}</td><td>{dateOnly(contract.end_date) || "-"}</td><td><span className={`time-left ${remainingDays !== null && remainingDays < 0 ? "expired" : ""}`}>{timeLeft}</span></td><td>{formatAmount(contract.monthly_rent)}</td><td>{formatAmount(invoice?.amount ?? 0)}</td><td>{formatAmount(paid)}</td><td>{formatAmount(balance)}</td><td><span className={`table-status ${contract.status.toLowerCase()}`}>{contract.status}</span></td><td><div className="contract-actions-grid"><button type="button" onClick={() => void handleContractView(contract.id)}>View</button><button type="button" onClick={() => void handleContractPreview(contract.id)}>Generated</button><button type="button" onClick={() => attachSignedContract(contract.id)}>Attach signed</button>{contract.status === "Active" && <><button type="button" onClick={() => payContractInvoice(contract.id)}>Pay</button><button type="button" onClick={() => upgradeContract(contract)}>Upgrade</button><button className="danger" type="button" onClick={() => void terminateContract(contract)}>Terminate</button></>}</div></td></tr>;
                   })}
                 </tbody></table></div>
                 <div className="pagination"><span>Showing {visibleContracts.length ? (contractPage - 1) * contractPageSize + 1 : 0} to {Math.min(contractPage * contractPageSize, filteredContracts.length)} of {filteredContracts.length}</span><div><button type="button" disabled={contractPage === 1} onClick={() => setContractPage((page) => page - 1)}>Previous</button><strong>{contractPage}</strong><button type="button" disabled={contractPage >= contractPageCount} onClick={() => setContractPage((page) => page + 1)}>Next</button></div></div>
