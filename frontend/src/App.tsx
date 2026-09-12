@@ -182,7 +182,9 @@ type InvoiceRecord = {
 
 type PaymentRecord = {
   id: string;
+  tenant_id: string;
   invoice_id: string;
+  unit_id: string;
   payment_reference: string;
   amount: number;
   payment_date: string;
@@ -274,6 +276,17 @@ function App() {
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoicePageSize, setInvoicePageSize] = useState(10);
   const [paymentForm, setPaymentForm] = useState(defaultPaymentForm);
+  const [paymentPageMode, setPaymentPageMode] = useState<"list" | "create">("list");
+  const [paymentTenantID, setPaymentTenantID] = useState("");
+  const [paymentSearch, setPaymentSearch] = useState("");
+  const [paymentTenantFilter, setPaymentTenantFilter] = useState("All");
+  const [paymentUnitFilter, setPaymentUnitFilter] = useState("All");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("All");
+  const [paymentInvoiceFilter, setPaymentInvoiceFilter] = useState("All");
+  const [paymentDateFrom, setPaymentDateFrom] = useState("");
+  const [paymentDateTo, setPaymentDateTo] = useState("");
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [paymentPageSize, setPaymentPageSize] = useState(10);
   const [documentContractID, setDocumentContractID] = useState("");
   const [documentName, setDocumentName] = useState("");
   const [documentFile, setDocumentFile] = useState<File | null>(null);
@@ -312,6 +325,8 @@ function App() {
     if (path.includes("/edit")) setContractPageMode("edit");
     if (path.includes("/upgrade")) setContractPageMode("upgrade");
     if (path.includes("/document")) setContractPageMode("document");
+    if (path === "/payments") setPaymentPageMode("list");
+    if (path === "/payments/new") setPaymentPageMode("create");
   };
 
   const logout = () => {
@@ -686,6 +701,15 @@ function App() {
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
     >,
   ) => {
+    if (event.target.name === "invoice_id") {
+      const invoice = invoices.find((item) => String(item.id) === event.target.value);
+      setPaymentForm((current) => ({
+        ...current,
+        invoice_id: event.target.value,
+        amount: invoice ? formatAmount(Math.max(0, invoice.amount - invoicePaidAmount(invoice.id))) : "",
+      }));
+      return;
+    }
     setPaymentForm((current) => ({
       ...current,
       [event.target.name]: event.target.value,
@@ -1035,15 +1059,19 @@ function App() {
       void Swal.fire({ icon: "info", title: "No invoice yet", text: "Generate an invoice for this contract before recording payment.", confirmButtonColor: "#133d32" });
       return;
     }
-    setPaymentForm((current) => ({ ...current, invoice_id: invoice.id, amount: formatAmount(invoice.amount) }));
+    setPaymentTenantID(String(invoice.tenant_id));
+    setPaymentForm((current) => ({ ...current, invoice_id: invoice.id, amount: formatAmount(Math.max(0, invoice.amount - invoicePaidAmount(invoice.id))) }));
     setView("payments");
+    goTo("/payments/new");
   };
 
   const payInvoice = (invoice: InvoiceRecord) => {
     const balance = Math.max(0, invoice.amount - invoicePaidAmount(invoice.id));
     if (balance === 0) return;
+    setPaymentTenantID(String(invoice.tenant_id));
     setPaymentForm((current) => ({ ...current, invoice_id: invoice.id, amount: formatAmount(balance) }));
     setView("payments");
+    goTo("/payments/new");
   };
 
   const showInvoicePayments = async (invoice: InvoiceRecord) => {
@@ -1087,6 +1115,8 @@ function App() {
     }
     await loadData();
     setPaymentForm(defaultPaymentForm);
+    setPaymentTenantID("");
+    goTo("/payments");
     void showSuccess("Payment recorded");
   };
 
@@ -1435,6 +1465,24 @@ function App() {
   });
   const invoicePageCount = Math.max(1, Math.ceil(filteredInvoices.length / invoicePageSize));
   const visibleInvoices = filteredInvoices.slice((invoicePage - 1) * invoicePageSize, invoicePage * invoicePageSize);
+  const filteredPayments = payments.filter((payment) => {
+    const tenant = tenants.find((item) => String(item.id) === String(payment.tenant_id));
+    const unit = units.find((item) => String(item.id) === String(payment.unit_id));
+    const invoice = invoices.find((item) => String(item.id) === String(payment.invoice_id));
+    const searchable = `${payment.payment_reference} ${payment.receipt_number || ""} ${tenant?.full_name || tenant?.company_name || ""} ${unit?.number || ""} ${invoice?.number || ""}`.toLowerCase();
+    return (
+      (!paymentSearch || searchable.includes(paymentSearch.toLowerCase())) &&
+      (paymentTenantFilter === "All" || String(payment.tenant_id) === paymentTenantFilter) &&
+      (paymentUnitFilter === "All" || String(payment.unit_id) === paymentUnitFilter) &&
+      (paymentMethodFilter === "All" || payment.payment_method === paymentMethodFilter) &&
+      (paymentInvoiceFilter === "All" || String(payment.invoice_id) === paymentInvoiceFilter) &&
+      (!paymentDateFrom || dateOnly(payment.payment_date) >= paymentDateFrom) &&
+      (!paymentDateTo || dateOnly(payment.payment_date) <= paymentDateTo)
+    );
+  });
+  const paymentPageCount = Math.max(1, Math.ceil(filteredPayments.length / paymentPageSize));
+  const visiblePayments = filteredPayments.slice((paymentPage - 1) * paymentPageSize, paymentPage * paymentPageSize);
+  const filteredPaymentTotal = filteredPayments.reduce((total, payment) => total + payment.amount, 0);
 
   const resetUnitList = () => {
     setUnitSearch("");
@@ -1470,6 +1518,20 @@ function App() {
     setInvoicePageSize(10);
   };
 
+  const resetPaymentList = () => {
+    setPaymentSearch("");
+    setPaymentTenantFilter("All");
+    setPaymentUnitFilter("All");
+    setPaymentMethodFilter("All");
+    setPaymentInvoiceFilter("All");
+    setPaymentDateFrom("");
+    setPaymentDateTo("");
+    setPaymentPage(1);
+    setPaymentPageSize(10);
+    setPaymentTenantID("");
+    setPaymentForm(defaultPaymentForm);
+  };
+
   const showView = (nextView: View) => {
     setFormError("");
     if (nextView === "units") {
@@ -1488,6 +1550,10 @@ function App() {
       goTo("/contracts");
     }
     if (nextView === "invoices") resetInvoiceList();
+    if (nextView === "payments") {
+      resetPaymentList();
+      goTo("/payments");
+    }
     setView(nextView);
   };
 
@@ -3098,9 +3164,17 @@ function App() {
         )}
 
         {view === "payments" && (
-          <div className="panel-grid">
-            <form className="panel form-panel" onSubmit={handlePaymentSubmit}>
-              <h2>Record payment</h2>
+          <div className={`payments-workspace ${paymentPageMode}`}>
+            {paymentPageMode === "list" && <button className="secondary-button payments-add-button" type="button" onClick={() => goTo("/payments/new")}>+ Record payment</button>}
+            {paymentPageMode === "create" && <form className="panel form-panel payment-entry-panel" onSubmit={handlePaymentSubmit}>
+              <div className="section-heading"><h2>Record payment</h2><button className="secondary-button" type="button" onClick={() => { setPaymentTenantID(""); setPaymentForm(defaultPaymentForm); goTo("/payments"); }}>Back to list</button></div>
+              <label>
+                Customer
+                <select value={paymentTenantID} onChange={(event) => { setPaymentTenantID(event.target.value); setPaymentForm((current) => ({ ...current, invoice_id: "", amount: "" })); }} required>
+                  <option value="">Select customer</option>
+                  {tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.full_name || tenant.company_name}</option>)}
+                </select>
+              </label>
               <label>
                 Invoice
                 <select
@@ -3113,13 +3187,14 @@ function App() {
                   {invoices
                     .filter(
                       (invoice) =>
+                        String(invoice.tenant_id) === paymentTenantID &&
                         invoice.status !== "Paid" &&
-                        invoice.status !== "Cancelled",
+                        invoice.status !== "Cancelled" &&
+                        invoicePaidAmount(invoice.id) < invoice.amount,
                     )
                     .map((invoice) => (
                       <option key={invoice.id} value={invoice.id}>
-                        {invoice.number} - {formatAmount(invoice.amount)} (
-                        {invoice.status})
+                        {invoice.number} · {units.find((unit) => String(unit.id) === String(invoice.unit_id))?.number || "Unit"} · Balance {formatAmount(Math.max(0, invoice.amount - invoicePaidAmount(invoice.id)))}
                       </option>
                     ))}
                 </select>
@@ -3196,38 +3271,24 @@ function App() {
               <button className="primary-button" type="submit">
                 Record payment
               </button>
-            </form>
-            <div className="panel list-panel">
-              <h2>Payment history</h2>
-              <div className="building-list">
-                {payments.length === 0 ? (
-                  <p className="empty-state">No payments recorded.</p>
-                ) : (
-                  payments.map((payment) => (
-                    <article className="building-card" key={payment.id}>
-                      <div className="building-header">
-                        <div>
-                          <h3>{formatAmount(payment.amount)}</h3>
-                          <span className="code-tag">
-                            {payment.payment_method}
-                          </span>
-                        </div>
-                        <span className="status-badge">
-                          {payment.payment_date}
-                        </span>
-                      </div>
-                      <p>{payment.payment_reference}</p>
-                      <div className="meta-row">
-                        <span>Invoice #{payment.invoice_id}</span>
-                        <span>
-                          {payment.receipt_number || "No receipt number"}
-                        </span>
-                      </div>
-                    </article>
-                  ))
-                )}
+            </form>}
+            {paymentPageMode === "list" && <div className="panel list-panel payment-ledger-panel">
+              <div className="section-heading"><h2>Payment history</h2><span>{filteredPayments.length} entries · Total {formatAmount(filteredPaymentTotal)}</span></div>
+              <div className="payment-filters">
+                <input value={paymentSearch} onChange={(event) => { setPaymentSearch(event.target.value); setPaymentPage(1); }} placeholder="Search reference, customer, room" />
+                <input type="date" value={paymentDateFrom} onChange={(event) => { setPaymentDateFrom(event.target.value); setPaymentPage(1); }} aria-label="From date" />
+                <input type="date" value={paymentDateTo} onChange={(event) => { setPaymentDateTo(event.target.value); setPaymentPage(1); }} aria-label="To date" />
+                <select value={paymentTenantFilter} onChange={(event) => { setPaymentTenantFilter(event.target.value); setPaymentPage(1); }}><option value="All">All customers</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.full_name || tenant.company_name}</option>)}</select>
+                <select value={paymentUnitFilter} onChange={(event) => { setPaymentUnitFilter(event.target.value); setPaymentPage(1); }}><option value="All">All units</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.number}</option>)}</select>
+                <select value={paymentMethodFilter} onChange={(event) => { setPaymentMethodFilter(event.target.value); setPaymentPage(1); }}><option>All</option><option>Bank Transfer</option><option>Cash</option><option>Mobile Money</option><option>Card</option><option>Cheque</option></select>
+                <select value={paymentInvoiceFilter} onChange={(event) => { setPaymentInvoiceFilter(event.target.value); setPaymentPage(1); }}><option value="All">All invoices</option>{invoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.number}</option>)}</select>
+                <select value={paymentPageSize} onChange={(event) => { setPaymentPageSize(Number(event.target.value)); setPaymentPage(1); }}><option value="10">10 entries</option><option value="25">25 entries</option><option value="50">50 entries</option></select>
               </div>
-            </div>
+              <div className="unit-table-wrap"><table className="unit-table payment-table"><thead><tr><th>No.</th><th>Date</th><th>Customer</th><th>Unit</th><th>Invoice</th><th>Reference</th><th>Method</th><th>Receipt</th><th>Amount</th></tr></thead><tbody>
+                {visiblePayments.length === 0 ? <tr><td colSpan={9}>No payments match these filters.</td></tr> : visiblePayments.map((payment, index) => { const tenant = tenants.find((item) => String(item.id) === String(payment.tenant_id)); const unit = units.find((item) => String(item.id) === String(payment.unit_id)); const invoice = invoices.find((item) => String(item.id) === String(payment.invoice_id)); return <tr key={payment.id}><td>{(paymentPage - 1) * paymentPageSize + index + 1}</td><td>{dateOnly(payment.payment_date)}</td><td>{tenant?.full_name || tenant?.company_name || "Unknown customer"}</td><td>{unit?.number || "-"}</td><td>{invoice?.number || payment.invoice_id}</td><td>{payment.payment_reference}</td><td>{payment.payment_method}</td><td>{payment.receipt_number || "-"}</td><td><strong>{formatAmount(payment.amount)}</strong></td></tr>; })}
+              </tbody><tfoot><tr><td colSpan={8}>Filtered total</td><td>{formatAmount(filteredPaymentTotal)}</td></tr></tfoot></table></div>
+              <div className="pagination"><span>Showing {visiblePayments.length ? (paymentPage - 1) * paymentPageSize + 1 : 0} to {Math.min(paymentPage * paymentPageSize, filteredPayments.length)} of {filteredPayments.length}</span><div><button type="button" disabled={paymentPage === 1} onClick={() => setPaymentPage((page) => page - 1)}>Previous</button><strong>{paymentPage}</strong><button type="button" disabled={paymentPage >= paymentPageCount} onClick={() => setPaymentPage((page) => page + 1)}>Next</button></div></div>
+            </div>}
           </div>
         )}
 
