@@ -376,6 +376,18 @@ func (h *Handler) generateInvoice(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	now := time.Now()
+	invoiceAmount := contract.MonthlyRent
+	startDate, startErr := time.Parse("2006-01-02", contract.StartDate)
+	endDate, endErr := time.Parse("2006-01-02", contract.EndDate)
+	if startErr == nil && endErr == nil && endDate.After(startDate) {
+		months := (endDate.Year()-startDate.Year())*12 + int(endDate.Month()-startDate.Month())
+		if endDate.Day() > startDate.Day() {
+			months++
+		}
+		if months > 1 {
+			invoiceAmount = contract.MonthlyRent * float64(months)
+		}
+	}
 	created, err := h.service.CreateInvoice(Invoice{
 		ContractID:  contract.ID,
 		TenantID:    contract.TenantID,
@@ -384,7 +396,7 @@ func (h *Handler) generateInvoice(writer http.ResponseWriter, request *http.Requ
 		Number:      "INV-" + strconv.FormatUint(contract.ID, 10) + "-" + now.Format("20060102"),
 		IssueDate:   now.Format("2006-01-02"),
 		DueDate:     now.AddDate(0, 0, 7).Format("2006-01-02"),
-		Amount:      contract.MonthlyRent,
+		Amount:      invoiceAmount,
 		Description: "Rent invoice for unit " + unit.Number,
 		Status:      "Pending",
 	})

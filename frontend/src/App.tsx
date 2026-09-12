@@ -26,6 +26,21 @@ const amountNumber = (value: string) => Number(value.replace(/,/g, "")) || 0;
 
 const dateOnly = (value: string) => value ? value.slice(0, 10) : "";
 
+const contractMonths = (start: string, end: string) => {
+  const startDate = new Date(`${dateOnly(start)}T00:00:00`);
+  const endDate = new Date(`${dateOnly(end)}T00:00:00`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 1;
+  const months = (endDate.getFullYear() - startDate.getFullYear()) * 12 + endDate.getMonth() - startDate.getMonth() + (endDate.getDate() > startDate.getDate() ? 1 : 0);
+  return Math.max(1, months);
+};
+
+const escapeHTML = (value: string | number) => String(value)
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;")
+  .replaceAll("'", "&#039;");
+
 const defaultForm = {
   name: "",
   code: "",
@@ -92,7 +107,7 @@ const defaultProformaForm = {
 };
 
 const defaultContractUpgradeForm = {
-  period: "1",
+  period: "",
   prepaid_amount: "0",
   payment_date: new Date().toISOString().slice(0, 10),
 };
@@ -154,9 +169,14 @@ type ContractRecord = {
 type InvoiceRecord = {
   id: string;
   contract_id: string;
+  tenant_id: string;
   building_id: number;
+  unit_id: string;
   number: string;
+  issue_date: string;
+  due_date: string;
   amount: number;
+  description?: string;
   status: string;
 };
 
@@ -249,6 +269,10 @@ function App() {
   const [upgradingContractID, setUpgradingContractID] = useState<string | null>(null);
   const [editingContractID, setEditingContractID] = useState<string | null>(null);
   const [contractUpgradeForm, setContractUpgradeForm] = useState(defaultContractUpgradeForm);
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("All");
+  const [invoicePage, setInvoicePage] = useState(1);
+  const [invoicePageSize, setInvoicePageSize] = useState(10);
   const [paymentForm, setPaymentForm] = useState(defaultPaymentForm);
   const [documentContractID, setDocumentContractID] = useState("");
   const [documentName, setDocumentName] = useState("");
@@ -746,6 +770,40 @@ function App() {
     }));
   };
 
+  const createContractInvoice = async (
+    contract: ContractRecord,
+    prepaidAmount: number,
+    paymentMethod: string,
+    paymentDate: string,
+  ) => {
+    const invoiceResponse = await apiFetch(`/contracts/${contract.id}/invoices`, {
+      method: "POST",
+    });
+    if (!invoiceResponse.ok) {
+      await showRequestError(invoiceResponse, "Contract saved, but its invoice could not be generated.");
+      return false;
+    }
+    const invoice = (await invoiceResponse.json()) as InvoiceRecord;
+    if (prepaidAmount <= 0) return true;
+    const paymentResponse = await apiFetch("/payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        invoice_id: Number(invoice.id),
+        amount: prepaidAmount,
+        payment_date: paymentDate,
+        payment_method: paymentMethod,
+        payment_reference: `PREPAY-${contract.id}-${Date.now()}`,
+        notes: "Prepaid during contract creation",
+      }),
+    });
+    if (!paymentResponse.ok) {
+      await showRequestError(paymentResponse, "Invoice generated, but the prepaid amount could not be recorded.");
+      return false;
+    }
+    return true;
+  };
+
   const handleProformaSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const selectedUnit = units.find((unit) => String(unit.id) === proformaForm.unit_id);
@@ -777,13 +835,13 @@ function App() {
       return;
     }
     const contract = (await contractResponse.json()) as ContractRecord;
-    const invoiceResponse = await apiFetch(`/contracts/${contract.id}/invoices`, {
-      method: "POST",
-    });
-    if (!invoiceResponse.ok) {
-      await showRequestError(invoiceResponse, "Could not generate the proforma invoice.");
-      return;
-    }
+    const completed = await createContractInvoice(
+      contract,
+      amountNumber(proformaForm.prepaid_amount),
+      "Bank Transfer",
+      proformaForm.issue_date,
+    );
+    if (!completed) return;
     await loadData();
     void showSuccess("Proforma invoice generated");
     setView("tenants");
@@ -810,14 +868,24 @@ function App() {
     });
 
     if (response.ok) {
-      await loadData();
-      setContractForm(defaultContractForm);
       if (editingContractID) {
+        await loadData();
+        setContractForm(defaultContractForm);
         setEditingContractID(null);
         goTo("/contracts");
         void showSuccess("Contract updated");
         return;
       }
+      const contract = (await response.json()) as ContractRecord;
+      const completed = await createContractInvoice(
+        contract,
+        amountNumber(contractForm.prepaid_amount),
+        contractForm.payment_method,
+        contractForm.start_date || new Date().toISOString().slice(0, 10),
+      );
+      if (!completed) return;
+      await loadData();
+      setContractForm(defaultContractForm);
       if (rentUnitID) {
         setRentUnitID(null)
         goTo('/units')
@@ -914,22 +982,51 @@ function App() {
       await showRequestError(response, "Could not upgrade contract.");
       return;
     }
+    const addedAmount = contract.monthly_rent * period;
+    const invoiceResponse = await apiFetch("/invoices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contract_id: Number(contract.id),
+        tenant_id: Number(contract.tenant_id),
+        building_id: contract.building_id,
+        unit_id: Number(contract.unit_id),
+        number: `UPG-${contract.id}-${contractUpgradeForm.payment_date.replaceAll("-", "")}-${Date.now()}`,
+        issue_date: contractUpgradeForm.payment_date,
+        due_date: contractUpgradeForm.payment_date,
+        amount: addedAmount,
+        description: `Contract upgrade for ${period} month${period === 1 ? "" : "s"}`,
+        status: "Pending",
+      }),
+    });
+    if (!invoiceResponse.ok) {
+      await showRequestError(invoiceResponse, "Contract upgraded, but the upgrade invoice could not be created.");
+      return;
+    }
+    const invoice = (await invoiceResponse.json()) as InvoiceRecord;
+    const prepaidAmount = amountNumber(contractUpgradeForm.prepaid_amount);
+    if (prepaidAmount > 0) {
+      const paymentResponse = await apiFetch("/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoice_id: Number(invoice.id),
+          amount: prepaidAmount,
+          payment_date: contractUpgradeForm.payment_date,
+          payment_method: contract.payment_method || "Bank Transfer",
+          payment_reference: `UPG-PREPAY-${contract.id}-${Date.now()}`,
+          notes: "Prepaid during contract upgrade",
+        }),
+      });
+      if (!paymentResponse.ok) {
+        await showRequestError(paymentResponse, "Upgrade invoice created, but the prepaid amount could not be recorded.");
+        return;
+      }
+    }
     await loadData();
     setContractPageMode("list");
     goTo("/contracts");
     void showSuccess("Contract upgraded");
-  };
-
-  const handleGenerateInvoice = async (contractID: string) => {
-    const response = await apiFetch(`/contracts/${contractID}/invoices`, {
-      method: "POST",
-    });
-    if (!response.ok) {
-      await showRequestError(response, "Could not generate invoice.");
-      return;
-    }
-    await loadData();
-    void showSuccess("Invoice generated");
   };
 
   const payContractInvoice = (contractID: string) => {
@@ -940,6 +1037,37 @@ function App() {
     }
     setPaymentForm((current) => ({ ...current, invoice_id: invoice.id, amount: formatAmount(invoice.amount) }));
     setView("payments");
+  };
+
+  const payInvoice = (invoice: InvoiceRecord) => {
+    const balance = Math.max(0, invoice.amount - invoicePaidAmount(invoice.id));
+    if (balance === 0) return;
+    setPaymentForm((current) => ({ ...current, invoice_id: invoice.id, amount: formatAmount(balance) }));
+    setView("payments");
+  };
+
+  const showInvoicePayments = async (invoice: InvoiceRecord) => {
+    const invoicePayments = payments.filter((payment) => String(payment.invoice_id) === String(invoice.id));
+    await Swal.fire({
+      icon: "info",
+      title: `Payments for ${invoice.number}`,
+      text: invoicePayments.length
+        ? invoicePayments.map((payment) => `${dateOnly(payment.payment_date)} · ${payment.payment_method} · ${formatAmount(payment.amount)} · ${payment.payment_reference}`).join("\n")
+        : "No payments recorded for this invoice.",
+      confirmButtonColor: "#133d32",
+    });
+  };
+
+  const viewInvoice = (invoice: InvoiceRecord) => {
+    const contract = contracts.find((item) => String(item.id) === String(invoice.contract_id));
+    const tenant = tenants.find((item) => String(item.id) === String(invoice.tenant_id));
+    const unit = units.find((item) => String(item.id) === String(invoice.unit_id));
+    const paid = invoicePaidAmount(invoice.id);
+    const balance = Math.max(0, invoice.amount - paid);
+    const tenantName = tenant?.full_name || tenant?.company_name || "Unknown tenant";
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHTML(invoice.number)}</title><style>body{max-width:850px;margin:48px auto;font:15px Arial,sans-serif;color:#17231f}h1{margin-bottom:4px}p{color:#69756e}table{width:100%;margin-top:28px;border-collapse:collapse}th,td{padding:12px;border:1px solid #dfe5dd;text-align:left}.totals{margin:26px 0 0 auto;width:320px}.totals div{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #dfe5dd}@media print{body{margin:20px}}</style></head><body><h1>Invoice ${escapeHTML(invoice.number)}</h1><p>${escapeHTML(tenantName)} · Room ${escapeHTML(unit?.number || "-")}</p><table><tr><th>Period</th><th>Monthly price</th><th>Issue date</th><th>Status</th></tr><tr><td>${escapeHTML(dateOnly(contract?.start_date || invoice.issue_date))} to ${escapeHTML(dateOnly(contract?.end_date || invoice.due_date))}</td><td>${escapeHTML(formatAmount(contract?.monthly_rent || invoice.amount))}</td><td>${escapeHTML(dateOnly(invoice.issue_date))}</td><td>${escapeHTML(balance === 0 ? "Paid" : paid > 0 ? "Partially Paid" : invoice.status)}</td></tr></table><div class="totals"><div><span>Total</span><strong>${escapeHTML(formatAmount(invoice.amount))}</strong></div><div><span>Paid</span><strong>${escapeHTML(formatAmount(paid))}</strong></div><div><span>Balance</span><strong>${escapeHTML(formatAmount(balance))}</strong></div></div><script>window.print()</script></body></html>`;
+    const invoiceURL = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    window.open(invoiceURL, "_blank", "noopener,noreferrer");
   };
 
   const handlePaymentSubmit = async (event: FormEvent) => {
@@ -1294,6 +1422,19 @@ function App() {
   });
   const contractPageCount = Math.max(1, Math.ceil(filteredContracts.length / contractPageSize));
   const visibleContracts = filteredContracts.slice((contractPage - 1) * contractPageSize, contractPage * contractPageSize);
+  const invoicePaidAmount = (invoiceID: string) => payments
+    .filter((payment) => String(payment.invoice_id) === String(invoiceID))
+    .reduce((total, payment) => total + payment.amount, 0);
+  const filteredInvoices = invoices.filter((invoice) => {
+    const tenant = tenants.find((item) => String(item.id) === String(invoice.tenant_id));
+    const unit = units.find((item) => String(item.id) === String(invoice.unit_id));
+    const paid = invoicePaidAmount(invoice.id);
+    const effectiveStatus = paid >= invoice.amount ? "Paid" : paid > 0 ? "Partially Paid" : invoice.status;
+    const searchable = `${invoice.number} ${tenant?.full_name || tenant?.company_name || ""} ${unit?.number || ""}`.toLowerCase();
+    return (!invoiceSearch || searchable.includes(invoiceSearch.toLowerCase())) && (invoiceStatusFilter === "All" || effectiveStatus === invoiceStatusFilter);
+  });
+  const invoicePageCount = Math.max(1, Math.ceil(filteredInvoices.length / invoicePageSize));
+  const visibleInvoices = filteredInvoices.slice((invoicePage - 1) * invoicePageSize, invoicePage * invoicePageSize);
 
   const resetUnitList = () => {
     setUnitSearch("");
@@ -1322,6 +1463,13 @@ function App() {
     setContractUpgradeForm(defaultContractUpgradeForm);
   };
 
+  const resetInvoiceList = () => {
+    setInvoiceSearch("");
+    setInvoiceStatusFilter("All");
+    setInvoicePage(1);
+    setInvoicePageSize(10);
+  };
+
   const showView = (nextView: View) => {
     setFormError("");
     if (nextView === "units") {
@@ -1339,6 +1487,7 @@ function App() {
       resetContractList();
       goTo("/contracts");
     }
+    if (nextView === "invoices") resetInvoiceList();
     setView(nextView);
   };
 
@@ -2672,21 +2821,30 @@ function App() {
               {contractPageMode === "upgrade" && (() => {
                 const contract = contracts.find((item) => item.id === upgradingContractID);
                 const unit = units.find((item) => String(item.id) === String(contract?.unit_id));
-                const period = Math.max(1, Number(contractUpgradeForm.period) || 1);
+                const tenant = tenants.find((item) => String(item.id) === String(contract?.tenant_id));
+                const period = Number(contractUpgradeForm.period) || 0;
                 const currentEndDate = contract?.end_date ? new Date(`${dateOnly(contract.end_date)}T00:00:00`) : null;
-                const endDate = currentEndDate ? new Date(currentEndDate.getFullYear(), currentEndDate.getMonth() + period, currentEndDate.getDate()).toISOString().slice(0, 10) : "";
+                const endDate = currentEndDate && period ? new Date(currentEndDate.getFullYear(), currentEndDate.getMonth() + period, currentEndDate.getDate()).toISOString().slice(0, 10) : "";
+                const addedAmount = (contract?.monthly_rent ?? 0) * period;
                 return (
                   <form className="panel form-panel contract-upgrade-panel" onSubmit={handleContractUpgradeSubmit}>
-                    <div className="section-heading"><h2>Upgrade tenant contract</h2><button className="secondary-button" type="button" onClick={() => goTo("/contracts")}>Back to list</button></div>
-                    <p className="empty-state">{unit?.number || "Unit"} · Current ending date: {dateOnly(contract?.end_date || "") || "-"}</p>
-                    <label>Monthly price<input value={formatAmount(contract?.monthly_rent ?? 0)} readOnly /></label>
-                    <label>Add period (months)<input type="number" min="1" name="period" value={contractUpgradeForm.period} onChange={(event) => setContractUpgradeForm((current) => ({ ...current, period: event.target.value }))} required /></label>
-                    <label>New ending date<input value={endDate} readOnly /></label>
-                    <label>Total amount (added)<input value={formatAmount((contract?.monthly_rent ?? 0) * period)} readOnly /></label>
-                    <label>Prepaid amount<input inputMode="decimal" name="prepaid_amount" value={contractUpgradeForm.prepaid_amount} onChange={(event) => setContractUpgradeForm((current) => ({ ...current, prepaid_amount: formatAmount(event.target.value) }))} /></label>
-                    <label>Balance<input value={formatAmount(Math.max(0, (contract?.monthly_rent ?? 0) * period - amountNumber(contractUpgradeForm.prepaid_amount)))} readOnly /></label>
-                    <label>Date<input type="date" name="payment_date" value={contractUpgradeForm.payment_date} onChange={(event) => setContractUpgradeForm((current) => ({ ...current, payment_date: event.target.value }))} required /></label>
-                    <button className="primary-button" type="submit">Save upgrade</button>
+                    <div className="upgrade-heading">
+                      <h2>Upgrade tenant contract</h2>
+                      <p>{tenant?.full_name || tenant?.company_name || "Tenant"} · Room {unit?.number || "-"}</p>
+                    </div>
+                    <div className="upgrade-form-grid">
+                      <label><span>Room</span><input value={unit?.number || ""} readOnly /></label>
+                      <label><span>Monthly price</span><input value={formatAmount(contract?.monthly_rent ?? 0)} readOnly /></label>
+                      <label><span>Entry date</span><input value={dateOnly(contract?.start_date || "")} readOnly /></label>
+                      <label><span>Current ending date</span><input value={dateOnly(contract?.end_date || "")} readOnly /></label>
+                      <label><span>Add period (months)</span><select name="period" value={contractUpgradeForm.period} onChange={(event) => setContractUpgradeForm((current) => ({ ...current, period: event.target.value }))} required><option value="">Select months</option>{Array.from({ length: 24 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1} {index === 0 ? "month" : "months"}</option>)}</select></label>
+                      <label><span>New ending date</span><input value={endDate} placeholder="yyyy-mm-dd" readOnly /></label>
+                      <label><span>Total amount (added)</span><input value={period ? formatAmount(addedAmount) : ""} readOnly /></label>
+                      <label><span>Prepaid amount</span><span className="upgrade-control"><input inputMode="decimal" name="prepaid_amount" value={contractUpgradeForm.prepaid_amount} onChange={(event) => setContractUpgradeForm((current) => ({ ...current, prepaid_amount: formatAmount(event.target.value) }))} /><small className="field-help">0 = no payment</small></span></label>
+                      <label><span>Balance</span><input value={formatAmount(Math.max(0, addedAmount - amountNumber(contractUpgradeForm.prepaid_amount)))} readOnly /></label>
+                      <label><span>Date</span><input type="date" name="payment_date" value={contractUpgradeForm.payment_date} onChange={(event) => setContractUpgradeForm((current) => ({ ...current, payment_date: event.target.value }))} required /></label>
+                    </div>
+                    <div className="upgrade-actions"><button className="primary-button" type="submit">Save upgrade</button><button className="secondary-button" type="button" onClick={() => goTo("/contracts")}>Back</button></div>
                   </form>
                 );
               })()}
@@ -2812,6 +2970,18 @@ function App() {
                     }
                   />
                 </label>
+                {contractPageMode === "create" && (
+                  <label>
+                    Prepaid amount
+                    <input
+                      inputMode="decimal"
+                      name="prepaid_amount"
+                      value={contractForm.prepaid_amount}
+                      onChange={(event) => setContractForm((current) => ({ ...current, prepaid_amount: formatAmount(event.target.value) }))}
+                    />
+                    <small className="field-help">Amount received now. Enter 0 when there is no prepayment.</small>
+                  </label>
+                )}
                 <div className="inline-fields">
                   <label>
                     Payment method
@@ -2898,61 +3068,31 @@ function App() {
         )}
 
         {view === "invoices" && (
-          <div className="panel-grid">
+          <div className="invoices-workspace">
             <div className="panel list-panel">
-              <h2>Generate from contract</h2>
-              <div className="building-list">
-                {contracts.filter((contract) => contract.status === "Active")
-                  .length === 0 ? (
-                  <p className="empty-state">
-                    Create an active contract before generating an invoice.
-                  </p>
-                ) : (
-                  contracts
-                    .filter((contract) => contract.status === "Active")
-                    .map((contract) => (
-                      <article className="building-card" key={contract.id}>
-                        <h3>{contract.contract_type} contract</h3>
-                        <p>
-                          {formatAmount(contract.monthly_rent)} /{" "}
-                          {contract.payment_frequency || "Monthly"}
-                        </p>
-                        <button
-                          className="primary-button"
-                          type="button"
-                          onClick={() =>
-                            void handleGenerateInvoice(contract.id)
-                          }
-                        >
-                          Generate invoice
-                        </button>
-                      </article>
-                    ))
-                )}
+              <div className="section-heading"><h2>Invoices</h2><span>{filteredInvoices.length} entries</span></div>
+              <div className="unit-toolbar invoice-toolbar">
+                <input value={invoiceSearch} onChange={(event) => { setInvoiceSearch(event.target.value); setInvoicePage(1); }} placeholder="Search invoice, tenant, or room" />
+                <select value={invoiceStatusFilter} onChange={(event) => { setInvoiceStatusFilter(event.target.value); setInvoicePage(1); }}><option>All</option><option>Pending</option><option>Partially Paid</option><option>Paid</option><option>Overdue</option><option>Cancelled</option></select>
+                <select value={invoicePageSize} onChange={(event) => { setInvoicePageSize(Number(event.target.value)); setInvoicePage(1); }}><option value="10">10 entries</option><option value="25">25 entries</option><option value="50">50 entries</option></select>
               </div>
-            </div>
-            <div className="panel list-panel">
-              <h2>Invoices</h2>
-              <div className="building-list">
-                {invoices.length === 0 ? (
-                  <p className="empty-state">No invoices yet.</p>
-                ) : (
-                  invoices.map((invoice) => (
-                    <article className="building-card" key={invoice.id}>
-                      <div className="building-header">
-                        <div>
-                          <h3>{invoice.number}</h3>
-                          <span className="code-tag">{invoice.status}</span>
-                        </div>
-                      </div>
-                      <p>Invoice record: {invoice.id}</p>
-                      <div className="meta-row">
-                        <span>Amount: {formatAmount(invoice.amount)}</span>
-                      </div>
-                    </article>
-                  ))
-                )}
+              <div className="unit-table-wrap">
+                <table className="unit-table invoice-table">
+                  <thead><tr><th>No.</th><th>Invoice ID</th><th>Tenant</th><th>TIN</th><th>NIDA</th><th>Mobile</th><th>Room</th><th>Period</th><th>Monthly price</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {visibleInvoices.length === 0 ? <tr><td colSpan={14}>No invoices match these filters.</td></tr> : visibleInvoices.map((invoice, index) => {
+                      const contract = contracts.find((item) => String(item.id) === String(invoice.contract_id));
+                      const tenant = tenants.find((item) => String(item.id) === String(invoice.tenant_id));
+                      const unit = units.find((item) => String(item.id) === String(invoice.unit_id));
+                      const paid = invoicePaidAmount(invoice.id);
+                      const balance = Math.max(0, invoice.amount - paid);
+                      const status = balance === 0 ? "Paid" : paid > 0 ? "Partially Paid" : invoice.status;
+                      return <tr key={invoice.id}><td>{(invoicePage - 1) * invoicePageSize + index + 1}</td><td>{invoice.number}</td><td>{tenant?.full_name || tenant?.company_name || "Unknown tenant"}</td><td>{tenant?.registration_ref || "-"}</td><td>{tenant?.id_number || "-"}</td><td>{tenant?.phone || "-"}</td><td>{unit?.number || "-"}</td><td><strong>{contract ? `${contractMonths(contract.start_date, contract.end_date)} month(s)` : "-"}</strong><small>{contract ? `${dateOnly(contract.start_date)} → ${dateOnly(contract.end_date)}` : dateOnly(invoice.issue_date)}</small></td><td>{formatAmount(contract?.monthly_rent || invoice.amount)}</td><td>{formatAmount(invoice.amount)}</td><td>{formatAmount(paid)}</td><td><strong>{formatAmount(balance)}</strong></td><td><span className={`invoice-status ${status.toLowerCase().replaceAll(" ", "-")}`}>{status}</span></td><td><div className="invoice-actions">{balance > 0 ? <button type="button" onClick={() => payInvoice(invoice)}>Payment</button> : <button className="paid-action" type="button" onClick={() => void showInvoicePayments(invoice)}>Payments</button>}<button className="outline" type="button" onClick={() => viewInvoice(invoice)}>Invoice</button></div></td></tr>;
+                    })}
+                  </tbody>
+                </table>
               </div>
+              <div className="pagination"><span>Showing {visibleInvoices.length ? (invoicePage - 1) * invoicePageSize + 1 : 0} to {Math.min(invoicePage * invoicePageSize, filteredInvoices.length)} of {filteredInvoices.length}</span><div><button type="button" disabled={invoicePage === 1} onClick={() => setInvoicePage((page) => page - 1)}>Previous</button><strong>{invoicePage}</strong><button type="button" disabled={invoicePage >= invoicePageCount} onClick={() => setInvoicePage((page) => page + 1)}>Next</button></div></div>
             </div>
           </div>
         )}
