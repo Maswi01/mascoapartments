@@ -255,6 +255,18 @@ function App() {
   const [registrationTab, setRegistrationTab] = useState<"users" | "roles" | "expenses">("users");
   const [registrationNavOpen, setRegistrationNavOpen] = useState(false);
   const [expenseCategoryForm, setExpenseCategoryForm] = useState(defaultExpenseCategoryForm);
+  const [userPageMode, setUserPageMode] = useState<"list" | "create">("list");
+  const [userSearch, setUserSearch] = useState("");
+  const [userPage, setUserPage] = useState(1);
+  const [userPageSize, setUserPageSize] = useState(10);
+  const [rolePageMode, setRolePageMode] = useState<"list" | "create" | "permissions">("list");
+  const [roleSearch, setRoleSearch] = useState("");
+  const [rolePage, setRolePage] = useState(1);
+  const [rolePageSize, setRolePageSize] = useState(10);
+  const [expensePageMode, setExpensePageMode] = useState<"list" | "create">("list");
+  const [expenseSearch, setExpenseSearch] = useState("");
+  const [expensePage, setExpensePage] = useState(1);
+  const [expensePageSize, setExpensePageSize] = useState(10);
   const [form, setForm] = useState(defaultForm);
   const [tenantForm, setTenantForm] = useState(defaultTenantForm);
   const [tenantSearch, setTenantSearch] = useState("");
@@ -529,12 +541,12 @@ function App() {
   }, [view, session]);
 
   useEffect(() => {
-    if (view !== "registration" || registrationTab !== "roles" || !selectedRole) return;
+    if (view !== "registration" || rolePageMode !== "permissions" || !selectedRole) return;
     void apiFetch(`/auth/roles/${encodeURIComponent(selectedRole)}/permissions`)
       .then((response) => (response.ok ? response.json() : { data: [] }))
       .then((payload) => setRolePermissions(payload.data ?? []))
       .catch(() => setRolePermissions([]));
-  }, [view, registrationTab, selectedRole]);
+  }, [view, rolePageMode, selectedRole]);
 
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
@@ -1262,8 +1274,13 @@ function App() {
       await showRequestError(response, "Could not register user.");
       return;
     }
+    const usersResponse = await apiFetch("/auth/users");
+    if (usersResponse.ok) {
+      const usersPayload = await usersResponse.json();
+      setAdminUsers(usersPayload.data ?? []);
+    }
     setNewUserForm({ username: "", email: "", full_name: "", password: "" });
-    setView("registration");
+    setUserPageMode("list");
     void showSuccess("User registered");
   };
 
@@ -1281,6 +1298,7 @@ function App() {
     const created = (await response.json()) as ExpenseCategoryRecord;
     setExpenseCategories((current) => [...current, created]);
     setExpenseCategoryForm(defaultExpenseCategoryForm);
+    setExpensePageMode("list");
     void showSuccess("Expense category saved");
   };
 
@@ -1296,9 +1314,14 @@ function App() {
       return;
     }
     setRoles((current) => [...current, newRoleName]);
-    setSelectedRole(newRoleName);
     setNewRoleName("");
+    setRolePageMode("list");
     void showSuccess("Role created");
+  };
+
+  const manageRolePermissions = (role: string) => {
+    setSelectedRole(role);
+    setRolePageMode("permissions");
   };
 
   const toggleRolePermission = async (permission: string, granted: boolean) => {
@@ -1519,6 +1542,28 @@ function App() {
   const buildingPageCount = Math.max(1, Math.ceil(filteredBuildings.length / buildingPageSize));
   const visibleBuildings = filteredBuildings.slice((buildingPage - 1) * buildingPageSize, buildingPage * buildingPageSize);
 
+  const filteredAdminUsers = adminUsers.filter((user) => {
+    const search = userSearch.toLowerCase();
+    const searchable = `${user.full_name} ${user.username} ${user.email}`.toLowerCase();
+    return !search || searchable.includes(search);
+  });
+  const userPageCount = Math.max(1, Math.ceil(filteredAdminUsers.length / userPageSize));
+  const visibleAdminUsers = filteredAdminUsers.slice((userPage - 1) * userPageSize, userPage * userPageSize);
+
+  const filteredRoles = roles.filter((role) => {
+    const search = roleSearch.toLowerCase();
+    return !search || role.toLowerCase().includes(search);
+  });
+  const rolePageCount = Math.max(1, Math.ceil(filteredRoles.length / rolePageSize));
+  const visibleRoles = filteredRoles.slice((rolePage - 1) * rolePageSize, rolePage * rolePageSize);
+
+  const filteredExpenseCategories = expenseCategories.filter((category) => {
+    const search = expenseSearch.toLowerCase();
+    return !search || category.name.toLowerCase().includes(search);
+  });
+  const expensePageCount = Math.max(1, Math.ceil(filteredExpenseCategories.length / expensePageSize));
+  const visibleExpenseCategories = filteredExpenseCategories.slice((expensePage - 1) * expensePageSize, expensePage * expensePageSize);
+
   const filteredUnits = units.filter((unit) => {
     const search = unitSearch.toLowerCase();
     return (
@@ -1639,6 +1684,28 @@ function App() {
     setBuildingStatusFilter("All");
     setBuildingPage(1);
     setBuildingPageSize(10);
+  };
+
+  const resetUserList = () => {
+    setUserPageMode("list");
+    setUserSearch("");
+    setUserPage(1);
+    setUserPageSize(10);
+  };
+
+  const resetRoleList = () => {
+    setRolePageMode("list");
+    setRoleSearch("");
+    setRolePage(1);
+    setRolePageSize(10);
+    setSelectedRole("");
+  };
+
+  const resetExpenseList = () => {
+    setExpensePageMode("list");
+    setExpenseSearch("");
+    setExpensePage(1);
+    setExpensePageSize(10);
   };
 
   const resetPaymentList = () => {
@@ -1827,6 +1894,7 @@ function App() {
                       className={`nav-sublink ${view === "registration" && registrationTab === "users" ? "active" : ""}`}
                       type="button"
                       onClick={() => {
+                        resetUserList();
                         setRegistrationTab("users");
                         showView("registration");
                       }}
@@ -1837,6 +1905,7 @@ function App() {
                       className={`nav-sublink ${view === "registration" && registrationTab === "roles" ? "active" : ""}`}
                       type="button"
                       onClick={() => {
+                        resetRoleList();
                         setRegistrationTab("roles");
                         showView("registration");
                       }}
@@ -1847,6 +1916,7 @@ function App() {
                       className={`nav-sublink ${view === "registration" && registrationTab === "expenses" ? "active" : ""}`}
                       type="button"
                       onClick={() => {
+                        resetExpenseList();
                         setRegistrationTab("expenses");
                         showView("registration");
                       }}
@@ -2178,10 +2248,28 @@ function App() {
               </p>
             </div>
             {registrationTab === "users" && (
-              <>
-                <div className="panel-grid">
+              <div className={`panel-grid users-workspace ${userPageMode}`}>
+                {userPageMode === "list" && (
+                  <button
+                    className="secondary-button users-add-button"
+                    type="button"
+                    onClick={() => setUserPageMode("create")}
+                  >
+                    + Register user
+                  </button>
+                )}
+                {userPageMode === "create" && (
                   <form className="panel form-panel" onSubmit={handleCreateUser}>
-                    <h2>Register user</h2>
+                    <div className="section-heading">
+                      <h2>Register user</h2>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={() => setUserPageMode("list")}
+                      >
+                        Back to list
+                      </button>
+                    </div>
                     <label>
                       Full name
                       <input
@@ -2241,115 +2329,180 @@ function App() {
                       Register user
                     </button>
                   </form>
-                  <div className="panel list-panel">
+                )}
+                <div className="panel list-panel">
+                  <div className="section-heading">
                     <h2>Users and access</h2>
-                    <div className="building-list">
-                      {adminUsers.length === 0 ? (
-                        <p className="empty-state">
-                          No users loaded. Confirm roles and user_roles exist in the
-                          database.
-                        </p>
-                      ) : (
-                        adminUsers.map((user) => (
-                          <article className="building-card" key={user.id}>
-                            <div className="building-header">
-                              <div>
-                                <h3>{user.full_name}</h3>
+                    <span>{filteredAdminUsers.length} entries</span>
+                  </div>
+                  <div className="unit-toolbar users-toolbar">
+                    <input
+                      value={userSearch}
+                      onChange={(event) => {
+                        setUserSearch(event.target.value);
+                        setUserPage(1);
+                      }}
+                      placeholder="Search name, username, email"
+                    />
+                    <select
+                      value={userPageSize}
+                      onChange={(event) => {
+                        setUserPageSize(Number(event.target.value));
+                        setUserPage(1);
+                      }}
+                    >
+                      <option value="10">10 entries</option>
+                      <option value="25">25 entries</option>
+                      <option value="50">50 entries</option>
+                    </select>
+                  </div>
+                  <div className="unit-table-wrap">
+                    <table className="unit-table">
+                      <thead>
+                        <tr>
+                          <th>No.</th>
+                          <th>Name</th>
+                          <th>Username</th>
+                          <th>Email</th>
+                          <th>Status</th>
+                          <th>Roles</th>
+                          <th>Assign role</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleAdminUsers.length === 0 ? (
+                          <tr>
+                            <td colSpan={7}>No users match these filters.</td>
+                          </tr>
+                        ) : (
+                          visibleAdminUsers.map((user, index) => (
+                            <tr key={user.id}>
+                              <td>{(userPage - 1) * userPageSize + index + 1}</td>
+                              <td>{user.full_name}</td>
+                              <td>
                                 <span className="code-tag">{user.username}</span>
-                              </div>
-                              <select
-                                value={user.status}
-                                onChange={(event) =>
-                                  void updateUserStatus(user.id, event.target.value)
-                                }
-                              >
-                                <option>Active</option>
-                                <option>Inactive</option>
-                                <option>Suspended</option>
-                              </select>
-                            </div>
-                            <p>{user.email}</p>
-                            <div className="meta-row">
-                              <span>
+                              </td>
+                              <td>{user.email}</td>
+                              <td>
+                                <select
+                                  value={user.status}
+                                  onChange={(event) =>
+                                    void updateUserStatus(user.id, event.target.value)
+                                  }
+                                >
+                                  <option>Active</option>
+                                  <option>Inactive</option>
+                                  <option>Suspended</option>
+                                </select>
+                              </td>
+                              <td>
                                 {user.roles.length
                                   ? user.roles.join(", ")
                                   : "No role assigned"}
-                              </span>
-                              <select
-                                defaultValue=""
-                                onChange={(event) => {
-                                  if (event.target.value)
-                                    void assignUserRole(
-                                      user.id,
-                                      event.target.value,
-                                    );
-                                }}
-                              >
-                                <option value="">Assign role</option>
-                                {roles.map((role) => (
-                                  <option key={role}>{role}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </article>
-                        ))
-                      )}
+                              </td>
+                              <td>
+                                <select
+                                  defaultValue=""
+                                  onChange={(event) => {
+                                    if (event.target.value)
+                                      void assignUserRole(
+                                        user.id,
+                                        event.target.value,
+                                      );
+                                  }}
+                                >
+                                  <option value="">Assign role</option>
+                                  {roles.map((role) => (
+                                    <option key={role}>{role}</option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="pagination">
+                    <span>
+                      Showing{" "}
+                      {visibleAdminUsers.length
+                        ? (userPage - 1) * userPageSize + 1
+                        : 0}{" "}
+                      to{" "}
+                      {Math.min(userPage * userPageSize, filteredAdminUsers.length)}{" "}
+                      of {filteredAdminUsers.length}
+                    </span>
+                    <div>
+                      <button
+                        type="button"
+                        disabled={userPage === 1}
+                        onClick={() => setUserPage((page) => page - 1)}
+                      >
+                        Previous
+                      </button>
+                      <strong>{userPage}</strong>
+                      <button
+                        type="button"
+                        disabled={userPage >= userPageCount}
+                        onClick={() => setUserPage((page) => page + 1)}
+                      >
+                        Next
+                      </button>
                     </div>
                   </div>
                 </div>
-                <div className="catalog-grid">
-                  <div className="catalog-card">
-                    <span>Buildings</span>
-                    <strong>{buildings.length}</strong>
-                    <small>Register and manage properties</small>
-                  </div>
-                  <div className="catalog-card">
-                    <span>Payment methods</span>
-                    <strong>6</strong>
-                    <small>Cash, bank, mobile, card, cheque, other</small>
-                  </div>
-                  <div className="catalog-card">
-                    <span>Roles</span>
-                    <strong>{roles.length}</strong>
-                    <small>Administrator, Manager, Accountant, Staff</small>
-                  </div>
-                </div>
-              </>
+              </div>
             )}
             {registrationTab === "roles" && (
-              <div className="panel-grid">
-                <form className="panel form-panel" onSubmit={handleCreateRole}>
-                  <h2>Add role</h2>
-                  <label>
-                    Role name
-                    <input
-                      value={newRoleName}
-                      onChange={(event) => setNewRoleName(event.target.value)}
-                      placeholder="Supervisor"
-                      required
-                    />
-                  </label>
-                  <button className="primary-button" type="submit">
-                    Save role
+              <div className={`panel-grid roles-workspace ${rolePageMode}`}>
+                {rolePageMode === "list" && (
+                  <button
+                    className="secondary-button roles-add-button"
+                    type="button"
+                    onClick={() => setRolePageMode("create")}
+                  >
+                    + Add role
                   </button>
-                </form>
-                <div className="panel list-panel">
-                  <h2>Permissions</h2>
-                  <label>
-                    Role
-                    <select
-                      value={selectedRole}
-                      onChange={(event) => setSelectedRole(event.target.value)}
-                    >
-                      <option value="">Select role</option>
-                      {roles.map((role) => (
-                        <option key={role} value={role}>
-                          {role}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {selectedRole ? (
+                )}
+                {rolePageMode === "create" && (
+                  <form className="panel form-panel" onSubmit={handleCreateRole}>
+                    <div className="section-heading">
+                      <h2>Add role</h2>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={() => setRolePageMode("list")}
+                      >
+                        Back to list
+                      </button>
+                    </div>
+                    <label>
+                      Role name
+                      <input
+                        value={newRoleName}
+                        onChange={(event) => setNewRoleName(event.target.value)}
+                        placeholder="Supervisor"
+                        required
+                      />
+                    </label>
+                    <button className="primary-button" type="submit">
+                      Save role
+                    </button>
+                  </form>
+                )}
+                {rolePageMode === "permissions" && (
+                  <div className="panel form-panel permissions-panel">
+                    <div className="section-heading">
+                      <h2>Permissions · {selectedRole}</h2>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={() => setRolePageMode("list")}
+                      >
+                        Back to list
+                      </button>
+                    </div>
                     <div className="permission-list">
                       {permissions.map((permission) => (
                         <label className="permission-toggle" key={permission}>
@@ -2364,50 +2517,220 @@ function App() {
                         </label>
                       ))}
                     </div>
-                  ) : (
-                    <p className="empty-state">Select a role to manage its permissions.</p>
-                  )}
+                  </div>
+                )}
+                <div className="panel list-panel">
+                  <div className="section-heading">
+                    <h2>Roles</h2>
+                    <span>{filteredRoles.length} entries</span>
+                  </div>
+                  <div className="unit-toolbar roles-toolbar">
+                    <input
+                      value={roleSearch}
+                      onChange={(event) => {
+                        setRoleSearch(event.target.value);
+                        setRolePage(1);
+                      }}
+                      placeholder="Search role"
+                    />
+                    <select
+                      value={rolePageSize}
+                      onChange={(event) => {
+                        setRolePageSize(Number(event.target.value));
+                        setRolePage(1);
+                      }}
+                    >
+                      <option value="10">10 entries</option>
+                      <option value="25">25 entries</option>
+                      <option value="50">50 entries</option>
+                    </select>
+                  </div>
+                  <div className="unit-table-wrap">
+                    <table className="unit-table">
+                      <thead>
+                        <tr>
+                          <th>No.</th>
+                          <th>Role</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleRoles.length === 0 ? (
+                          <tr>
+                            <td colSpan={3}>No roles match these filters.</td>
+                          </tr>
+                        ) : (
+                          visibleRoles.map((role, index) => (
+                            <tr key={role}>
+                              <td>{(rolePage - 1) * rolePageSize + index + 1}</td>
+                              <td>
+                                <span className="code-tag">{role}</span>
+                              </td>
+                              <td>
+                                <button
+                                  className="table-action edit"
+                                  type="button"
+                                  onClick={() => manageRolePermissions(role)}
+                                >
+                                  Manage permissions
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="pagination">
+                    <span>
+                      Showing{" "}
+                      {visibleRoles.length ? (rolePage - 1) * rolePageSize + 1 : 0}{" "}
+                      to {Math.min(rolePage * rolePageSize, filteredRoles.length)}{" "}
+                      of {filteredRoles.length}
+                    </span>
+                    <div>
+                      <button
+                        type="button"
+                        disabled={rolePage === 1}
+                        onClick={() => setRolePage((page) => page - 1)}
+                      >
+                        Previous
+                      </button>
+                      <strong>{rolePage}</strong>
+                      <button
+                        type="button"
+                        disabled={rolePage >= rolePageCount}
+                        onClick={() => setRolePage((page) => page + 1)}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
             {registrationTab === "expenses" && (
-              <div className="panel-grid">
-                <form className="panel form-panel" onSubmit={handleExpenseCategorySubmit}>
-                  <h2>Add expense category</h2>
-                  <label>
-                    Name
-                    <input
-                      value={expenseCategoryForm.name}
-                      onChange={(event) =>
-                        setExpenseCategoryForm((current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
-                      }
-                      placeholder="Repairs and maintenance"
-                      required
-                    />
-                  </label>
-                  <button className="primary-button" type="submit">
-                    Save category
+              <div className={`panel-grid expenses-workspace ${expensePageMode}`}>
+                {expensePageMode === "list" && (
+                  <button
+                    className="secondary-button expenses-add-button"
+                    type="button"
+                    onClick={() => setExpensePageMode("create")}
+                  >
+                    + Add category
                   </button>
-                </form>
+                )}
+                {expensePageMode === "create" && (
+                  <form className="panel form-panel" onSubmit={handleExpenseCategorySubmit}>
+                    <div className="section-heading">
+                      <h2>Add expense category</h2>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={() => setExpensePageMode("list")}
+                      >
+                        Back to list
+                      </button>
+                    </div>
+                    <label>
+                      Name
+                      <input
+                        value={expenseCategoryForm.name}
+                        onChange={(event) =>
+                          setExpenseCategoryForm((current) => ({
+                            ...current,
+                            name: event.target.value,
+                          }))
+                        }
+                        placeholder="Repairs and maintenance"
+                        required
+                      />
+                    </label>
+                    <button className="primary-button" type="submit">
+                      Save category
+                    </button>
+                  </form>
+                )}
                 <div className="panel list-panel">
-                  <h2>Expense categories</h2>
-                  <div className="building-list">
-                    {expenseCategories.length === 0 ? (
-                      <p className="empty-state">No expense categories yet.</p>
-                    ) : (
-                      expenseCategories.map((category) => (
-                        <article className="building-card" key={category.id}>
-                          <div className="building-header">
-                            <div>
-                              <h3>{category.name}</h3>
-                            </div>
-                          </div>
-                        </article>
-                      ))
-                    )}
+                  <div className="section-heading">
+                    <h2>Expense categories</h2>
+                    <span>{filteredExpenseCategories.length} entries</span>
+                  </div>
+                  <div className="unit-toolbar expenses-toolbar">
+                    <input
+                      value={expenseSearch}
+                      onChange={(event) => {
+                        setExpenseSearch(event.target.value);
+                        setExpensePage(1);
+                      }}
+                      placeholder="Search category"
+                    />
+                    <select
+                      value={expensePageSize}
+                      onChange={(event) => {
+                        setExpensePageSize(Number(event.target.value));
+                        setExpensePage(1);
+                      }}
+                    >
+                      <option value="10">10 entries</option>
+                      <option value="25">25 entries</option>
+                      <option value="50">50 entries</option>
+                    </select>
+                  </div>
+                  <div className="unit-table-wrap">
+                    <table className="unit-table">
+                      <thead>
+                        <tr>
+                          <th>No.</th>
+                          <th>Name</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleExpenseCategories.length === 0 ? (
+                          <tr>
+                            <td colSpan={2}>No expense categories match these filters.</td>
+                          </tr>
+                        ) : (
+                          visibleExpenseCategories.map((category, index) => (
+                            <tr key={category.id}>
+                              <td>{(expensePage - 1) * expensePageSize + index + 1}</td>
+                              <td>{category.name}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="pagination">
+                    <span>
+                      Showing{" "}
+                      {visibleExpenseCategories.length
+                        ? (expensePage - 1) * expensePageSize + 1
+                        : 0}{" "}
+                      to{" "}
+                      {Math.min(
+                        expensePage * expensePageSize,
+                        filteredExpenseCategories.length,
+                      )}{" "}
+                      of {filteredExpenseCategories.length}
+                    </span>
+                    <div>
+                      <button
+                        type="button"
+                        disabled={expensePage === 1}
+                        onClick={() => setExpensePage((page) => page - 1)}
+                      >
+                        Previous
+                      </button>
+                      <strong>{expensePage}</strong>
+                      <button
+                        type="button"
+                        disabled={expensePage >= expensePageCount}
+                        onClick={() => setExpensePage((page) => page + 1)}
+                      >
+                        Next
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
