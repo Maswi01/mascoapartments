@@ -2259,7 +2259,11 @@ function App() {
                   <button
                     className="secondary-button"
                     type="button"
-                    onClick={() => goTo("/buildings")}
+                    onClick={() => {
+                      setForm(defaultForm);
+                      setFormError("");
+                      goTo("/buildings");
+                    }}
                   >
                     Back to list
                   </button>
@@ -2271,7 +2275,6 @@ function App() {
                     value={form.name}
                     onChange={handleChange}
                     placeholder="Mlimani Apartments"
-                    required
                   />
                 </label>
                 <label>
@@ -2281,7 +2284,6 @@ function App() {
                     value={form.code}
                     onChange={handleChange}
                     placeholder="MLM-01"
-                    required
                   />
                 </label>
                 <label>
@@ -2291,7 +2293,6 @@ function App() {
                     value={form.address}
                     onChange={handleChange}
                     placeholder="Dar es Salaam"
-                    required
                   />
                 </label>
                 <label>
@@ -2312,7 +2313,6 @@ function App() {
                       name="floors"
                       value={form.floors}
                       onChange={handleChange}
-                      required
                     />
                   </label>
                   <label>
