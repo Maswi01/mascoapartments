@@ -439,11 +439,7 @@ func (s *Service) CreateExpenseCategory(category ExpenseCategory) (*ExpenseCateg
 		return nil, errors.New("expense category name is required")
 	}
 	category.ID = uint64(len(s.expenseCategories) + 1)
-	if category.Status == "" {
-		category.Status = "Active"
-	}
 	category.CreatedAt = time.Now()
-	category.UpdatedAt = category.CreatedAt
 	s.expenseCategories[category.ID] = &category
 	return s.expenseCategories[category.ID], nil
 }

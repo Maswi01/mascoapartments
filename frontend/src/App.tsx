@@ -52,8 +52,6 @@ const defaultForm = {
 
 const defaultExpenseCategoryForm = {
   name: "",
-  description: "",
-  status: "Active",
 };
 
 const defaultTenantForm = {
@@ -219,8 +217,7 @@ type AdminUser = {
 type ExpenseCategoryRecord = {
   id: string;
   name: string;
-  description?: string;
-  status: string;
+  created_at?: string;
 };
 type View =
   | "home"
@@ -256,6 +253,7 @@ function App() {
   const [newRoleName, setNewRoleName] = useState("");
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategoryRecord[]>([]);
   const [registrationTab, setRegistrationTab] = useState<"users" | "roles" | "expenses">("users");
+  const [registrationNavOpen, setRegistrationNavOpen] = useState(false);
   const [expenseCategoryForm, setExpenseCategoryForm] = useState(defaultExpenseCategoryForm);
   const [form, setForm] = useState(defaultForm);
   const [tenantForm, setTenantForm] = useState(defaultTenantForm);
@@ -508,6 +506,10 @@ function App() {
       setContractForm((current) => ({ ...current, unit_id: unit.id, contract_type: unit.type, monthly_rent: formatAmount(unit.base_rent) }));
     }
   }, [units]);
+
+  useEffect(() => {
+    if (view === "registration") setRegistrationNavOpen(true);
+  }, [view]);
 
   useEffect(() => {
     if (view !== "registration" || !session) return;
@@ -1810,12 +1812,50 @@ function App() {
               >
                 Buildings
               </button>
-              <button
-                className={`nav-link ${view === "registration" ? "active" : ""}`}
-                onClick={() => showView("registration")}
-              >
-                Registration
-              </button>
+              <div className="nav-group">
+                <button
+                  className={`nav-link nav-group-toggle ${view === "registration" ? "active" : ""}`}
+                  type="button"
+                  onClick={() => setRegistrationNavOpen((open) => !open)}
+                >
+                  Registration
+                  <span className={`nav-chevron ${registrationNavOpen ? "open" : ""}`}>▾</span>
+                </button>
+                {registrationNavOpen && (
+                  <div className="nav-subgroup">
+                    <button
+                      className={`nav-sublink ${view === "registration" && registrationTab === "users" ? "active" : ""}`}
+                      type="button"
+                      onClick={() => {
+                        setRegistrationTab("users");
+                        showView("registration");
+                      }}
+                    >
+                      Users
+                    </button>
+                    <button
+                      className={`nav-sublink ${view === "registration" && registrationTab === "roles" ? "active" : ""}`}
+                      type="button"
+                      onClick={() => {
+                        setRegistrationTab("roles");
+                        showView("registration");
+                      }}
+                    >
+                      Roles &amp; permissions
+                    </button>
+                    <button
+                      className={`nav-sublink ${view === "registration" && registrationTab === "expenses" ? "active" : ""}`}
+                      type="button"
+                      onClick={() => {
+                        setRegistrationTab("expenses");
+                        showView("registration");
+                      }}
+                    >
+                      Expense categories
+                    </button>
+                  </div>
+                )}
+              </div>
               <button
                 className={`nav-link ${view === "reports" ? "active" : ""}`}
                 onClick={() => showView("reports")}
@@ -2137,29 +2177,6 @@ function App() {
                 building.
               </p>
             </div>
-            <nav className="sub-nav">
-              <button
-                className={`sub-nav-link ${registrationTab === "users" ? "active" : ""}`}
-                type="button"
-                onClick={() => setRegistrationTab("users")}
-              >
-                Users
-              </button>
-              <button
-                className={`sub-nav-link ${registrationTab === "roles" ? "active" : ""}`}
-                type="button"
-                onClick={() => setRegistrationTab("roles")}
-              >
-                Roles &amp; permissions
-              </button>
-              <button
-                className={`sub-nav-link ${registrationTab === "expenses" ? "active" : ""}`}
-                type="button"
-                onClick={() => setRegistrationTab("expenses")}
-              >
-                Expense categories
-              </button>
-            </nav>
             {registrationTab === "users" && (
               <>
                 <div className="panel-grid">
@@ -2371,34 +2388,6 @@ function App() {
                       required
                     />
                   </label>
-                  <label>
-                    Description
-                    <textarea
-                      value={expenseCategoryForm.description}
-                      onChange={(event) =>
-                        setExpenseCategoryForm((current) => ({
-                          ...current,
-                          description: event.target.value,
-                        }))
-                      }
-                      placeholder="What this category covers"
-                    />
-                  </label>
-                  <label>
-                    Status
-                    <select
-                      value={expenseCategoryForm.status}
-                      onChange={(event) =>
-                        setExpenseCategoryForm((current) => ({
-                          ...current,
-                          status: event.target.value,
-                        }))
-                      }
-                    >
-                      <option>Active</option>
-                      <option>Inactive</option>
-                    </select>
-                  </label>
                   <button className="primary-button" type="submit">
                     Save category
                   </button>
@@ -2415,9 +2404,7 @@ function App() {
                             <div>
                               <h3>{category.name}</h3>
                             </div>
-                            <span className="status-badge">{category.status}</span>
                           </div>
-                          <p>{category.description || "No description"}</p>
                         </article>
                       ))
                     )}

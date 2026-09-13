@@ -16,11 +16,8 @@ type MySQLService struct {
 func NewMySQLService(db *sql.DB) *MySQLService {
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS expense_categories (
 		id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-		name VARCHAR(191) NOT NULL,
-		description TEXT NULL,
-		status VARCHAR(32) NOT NULL DEFAULT 'Active',
-		created_at DATETIME NOT NULL,
-		updated_at DATETIME NOT NULL
+		name VARCHAR(150) NOT NULL UNIQUE,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`); err != nil {
 		log.Printf("ensure expense_categories table: %v", err)
 	}
@@ -563,12 +560,7 @@ func (s *MySQLService) CreateExpenseCategory(category ExpenseCategory) (*Expense
 	if category.Name == "" {
 		return nil, errors.New("expense category name is required")
 	}
-	if category.Status == "" {
-		category.Status = "Active"
-	}
-	category.CreatedAt = time.Now()
-	category.UpdatedAt = category.CreatedAt
-	result, err := s.db.Exec(`INSERT INTO expense_categories (name, description, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, category.Name, category.Description, category.Status, category.CreatedAt, category.UpdatedAt)
+	result, err := s.db.Exec(`INSERT INTO expense_categories (name) VALUES (?)`, category.Name)
 	if err != nil {
 		return nil, fmt.Errorf("save expense category: %w", err)
 	}
@@ -576,11 +568,20 @@ func (s *MySQLService) CreateExpenseCategory(category ExpenseCategory) (*Expense
 	if err != nil {
 		return nil, fmt.Errorf("read expense category id: %w", err)
 	}
-	return &category, nil
+	return s.getExpenseCategory(category.ID)
+}
+
+func (s *MySQLService) getExpenseCategory(id uint64) (*ExpenseCategory, error) {
+	item := &ExpenseCategory{}
+	err := s.db.QueryRow(`SELECT id, name, created_at FROM expense_categories WHERE id = ?`, id).Scan(&item.ID, &item.Name, &item.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("read expense category: %w", err)
+	}
+	return item, nil
 }
 
 func (s *MySQLService) ListExpenseCategories() []*ExpenseCategory {
-	rows, err := s.db.Query(`SELECT id, name, COALESCE(description, ''), status, created_at, updated_at FROM expense_categories ORDER BY name`)
+	rows, err := s.db.Query(`SELECT id, name, created_at FROM expense_categories ORDER BY name`)
 	if err != nil {
 		return []*ExpenseCategory{}
 	}
@@ -588,7 +589,7 @@ func (s *MySQLService) ListExpenseCategories() []*ExpenseCategory {
 	items := make([]*ExpenseCategory, 0)
 	for rows.Next() {
 		item := &ExpenseCategory{}
-		if rows.Scan(&item.ID, &item.Name, &item.Description, &item.Status, &item.CreatedAt, &item.UpdatedAt) == nil {
+		if rows.Scan(&item.ID, &item.Name, &item.CreatedAt) == nil {
 			items = append(items, item)
 		}
 	}

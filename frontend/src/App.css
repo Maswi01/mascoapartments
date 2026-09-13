@@ -9,6 +9,13 @@
 .nav { display: flex; flex-direction: column; gap: 4px; }
 .nav-link { width: 100%; border: 0; border-radius: 6px; padding: 11px 12px; background: transparent; color: #c6d8cc; text-align: left; font: 600 14px 'DM Sans', sans-serif; cursor: pointer; }
 .nav-link.active, .nav-link:hover { background: rgba(213, 238, 135, .15); color: #fff; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-group-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nav-chevron { font-size: 11px; transition: transform .15s ease; }
+.nav-chevron.open { transform: rotate(180deg); }
+.nav-subgroup { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; margin-top: 2px; }
+.nav-sublink { width: 100%; border: 0; border-radius: 6px; padding: 9px 12px; background: transparent; color: #a9cbb8; text-align: left; font: 600 13px 'DM Sans', sans-serif; cursor: pointer; }
+.nav-sublink.active, .nav-sublink:hover { background: rgba(213, 238, 135, .12); color: #fff; }
 .logout-button { margin-top: auto; border: 1px solid rgba(234, 246, 236, .25); border-radius: 6px; padding: 11px 12px; background: transparent; color: #eaf6ec; font: 700 13px 'DM Sans', sans-serif; cursor: pointer; }
 .logout-button:hover { background: rgba(223, 118, 89, .18); border-color: var(--coral); }
 .content { width: min(100%, 1360px); padding: 46px clamp(22px, 4vw, 64px) 70px; box-sizing: border-box; }
