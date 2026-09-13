@@ -54,8 +54,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/buildings", h.listBuildings)
 	mux.HandleFunc("POST /api/v1/buildings", h.createBuilding)
 	mux.HandleFunc("GET /api/v1/buildings/{id}/floors", h.listFloors)
+	mux.HandleFunc("GET /api/v1/floors", h.listFloors)
 	mux.HandleFunc("POST /api/v1/buildings/{id}/floors", h.createFloor)
 	mux.HandleFunc("GET /api/v1/buildings/{id}/units", h.listUnits)
+	mux.HandleFunc("GET /api/v1/units", h.listUnits)
 	mux.HandleFunc("POST /api/v1/buildings/{id}/units", h.createUnit)
 	mux.HandleFunc("PUT /api/v1/units/{id}", h.updateUnit)
 	mux.HandleFunc("DELETE /api/v1/units/{id}", h.deleteUnit)
@@ -107,10 +109,9 @@ func (h *Handler) createBuilding(writer http.ResponseWriter, request *http.Reque
 }
 
 func (h *Handler) listFloors(writer http.ResponseWriter, request *http.Request) {
-	buildingID, ok := pathID(request)
-	if !ok {
-		writeJSONError(writer, http.StatusBadRequest, "invalid building id")
-		return
+	buildingID := queryID(request)
+	if buildingID == 0 {
+		buildingID, _ = pathID(request)
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListFloorsByBuilding(buildingID)})
@@ -140,10 +141,9 @@ func (h *Handler) createFloor(writer http.ResponseWriter, request *http.Request)
 }
 
 func (h *Handler) listUnits(writer http.ResponseWriter, request *http.Request) {
-	buildingID, ok := pathID(request)
-	if !ok {
-		writeJSONError(writer, http.StatusBadRequest, "invalid building id")
-		return
+	buildingID := queryID(request)
+	if buildingID == 0 {
+		buildingID, _ = pathID(request)
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListUnitsByBuilding(buildingID)})

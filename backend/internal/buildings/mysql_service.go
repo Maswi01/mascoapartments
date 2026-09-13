@@ -90,7 +90,14 @@ func (s *MySQLService) CreateFloor(floor Floor) (*Floor, error) {
 }
 
 func (s *MySQLService) ListFloorsByBuilding(buildingID uint64) []*Floor {
-	rows, err := s.db.Query(`SELECT id, building_id, name, description, created_at, updated_at FROM floors WHERE building_id = ? ORDER BY created_at`, buildingID)
+	query := `SELECT id, building_id, name, description, created_at, updated_at FROM floors`
+	args := []interface{}{}
+	if buildingID != 0 {
+		query += ` WHERE building_id = ?`
+		args = append(args, buildingID)
+	}
+	query += ` ORDER BY created_at`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return []*Floor{}
 	}
@@ -124,7 +131,14 @@ func (s *MySQLService) CreateUnit(unit Unit) (*Unit, error) {
 }
 
 func (s *MySQLService) ListUnitsByBuilding(buildingID uint64) []*Unit {
-	rows, err := s.db.Query(`SELECT id, building_id, COALESCE(floor_id, 0), unit_number, unit_type, COALESCE(description, ''), COALESCE(base_rent, 0), status, created_at, updated_at FROM units WHERE building_id = ? ORDER BY unit_number`, buildingID)
+	query := `SELECT id, building_id, COALESCE(floor_id, 0), unit_number, unit_type, COALESCE(description, ''), COALESCE(base_rent, 0), status, created_at, updated_at FROM units`
+	args := []interface{}{}
+	if buildingID != 0 {
+		query += ` WHERE building_id = ?`
+		args = append(args, buildingID)
+	}
+	query += ` ORDER BY unit_number`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return []*Unit{}
 	}

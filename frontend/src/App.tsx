@@ -245,6 +245,12 @@ function App() {
   const [tenantPage, setTenantPage] = useState(1);
   const [tenantPageSize, setTenantPageSize] = useState(10);
   const [editingTenantID, setEditingTenantID] = useState<string | null>(null);
+  const [buildingPageMode, setBuildingPageMode] = useState<"list" | "create">("list");
+  const [buildingSearch, setBuildingSearch] = useState("");
+  const [buildingStatusFilter, setBuildingStatusFilter] = useState("All");
+  const [buildingPage, setBuildingPage] = useState(1);
+  const [buildingPageSize, setBuildingPageSize] = useState(10);
+  const [targetBuildingID, setTargetBuildingID] = useState("");
   const [unitRows, setUnitRows] = useState([defaultUnitForm]);
   const [unitSearch, setUnitSearch] = useState("");
   const [unitTypeFilter, setUnitTypeFilter] = useState("All");
@@ -331,6 +337,8 @@ function App() {
     if (/^\/invoices\/[^/]+\/payment$/.test(path)) setInvoicePageMode("payment");
     if (path === "/payments") setPaymentPageMode("list");
     if (path === "/payments/new") setPaymentPageMode("create");
+    if (path === "/buildings") setBuildingPageMode("list");
+    if (path === "/buildings/new") setBuildingPageMode("create");
   };
 
   const logout = () => {
@@ -445,14 +453,16 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem("masco-building-id", selectedBuildingID);
-    if (!session || selectedBuildingID === "hq") {
+    if (!session) {
       setUnits([]);
       setFloors([]);
       return;
     }
+    const unitsEndpoint = selectedBuildingID === "hq" ? "/units" : `/buildings/${selectedBuildingID}/units`;
+    const floorsEndpoint = selectedBuildingID === "hq" ? "/floors" : `/buildings/${selectedBuildingID}/floors`;
     void Promise.all([
-      apiFetch(`/buildings/${selectedBuildingID}/units`),
-      apiFetch(`/buildings/${selectedBuildingID}/floors`),
+      apiFetch(unitsEndpoint),
+      apiFetch(floorsEndpoint),
     ])
       .then(async ([unitsResponse, floorsResponse]) => {
         if (!unitsResponse.ok || !floorsResponse.ok)
@@ -634,20 +644,21 @@ function App() {
 
   const handleUnitSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (selectedBuildingID === "hq") {
+    const effectiveBuildingID = targetBuildingID || (selectedBuildingID === "hq" ? "" : selectedBuildingID);
+    if (!effectiveBuildingID) {
       await Swal.fire({
         icon: "info",
         title: "Choose a building first",
-        text: "Select the building this unit belongs to from the portfolio context selector.",
+        text: "Select the building this unit belongs to.",
         confirmButtonColor: "#133d32",
       });
       return;
     }
     if (editingUnitID) {
       const row = unitRows[0];
-      const response = await apiFetch(`/units/${editingUnitID}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...row, id: Number(editingUnitID), building_id: Number(selectedBuildingID), floor_id: Number(row.floor_id) || 0, base_rent: amountNumber(row.base_rent) }) });
+      const response = await apiFetch(`/units/${editingUnitID}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...row, id: Number(editingUnitID), building_id: Number(effectiveBuildingID), floor_id: Number(row.floor_id) || 0, base_rent: amountNumber(row.base_rent) }) });
       if (!response.ok) { await showRequestError(response, "Could not update unit."); return; }
-      const payload = await apiFetch(`/buildings/${selectedBuildingID}/units`);
+      const payload = await apiFetch(selectedBuildingID === "hq" ? "/units" : `/buildings/${selectedBuildingID}/units`);
       const data = await payload.json();
       setUnits(data.data ?? []);
       setEditingUnitID(null);
@@ -658,7 +669,7 @@ function App() {
     }
     for (const row of unitRows) {
       const response = await apiFetch(
-        `/buildings/${selectedBuildingID}/units`,
+        `/buildings/${effectiveBuildingID}/units`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -674,7 +685,7 @@ function App() {
         return;
       }
     }
-    const payload = await apiFetch(`/buildings/${selectedBuildingID}/units`);
+    const payload = await apiFetch(selectedBuildingID === "hq" ? "/units" : `/buildings/${selectedBuildingID}/units`);
     const data = await payload.json();
     setUnits(data.data ?? []);
     setUnitRows([{ ...defaultUnitForm }]);
@@ -737,7 +748,7 @@ function App() {
     if (response.ok) {
       await loadData();
       setForm(defaultForm);
-      setView("home");
+      goTo("/buildings");
       void showSuccess("Building saved");
     } else {
       const error = (await response
@@ -1412,6 +1423,14 @@ function App() {
     settings: "Settings",
   };
 
+  const filteredBuildings = buildings.filter((building) => {
+    const search = buildingSearch.toLowerCase();
+    const searchable = `${building.name} ${building.code} ${building.address}`.toLowerCase();
+    return (!search || searchable.includes(search)) && (buildingStatusFilter === "All" || building.status === buildingStatusFilter);
+  });
+  const buildingPageCount = Math.max(1, Math.ceil(filteredBuildings.length / buildingPageSize));
+  const visibleBuildings = filteredBuildings.slice((buildingPage - 1) * buildingPageSize, buildingPage * buildingPageSize);
+
   const filteredUnits = units.filter((unit) => {
     const search = unitSearch.toLowerCase();
     return (
@@ -1527,6 +1546,13 @@ function App() {
     setPaymentForm(defaultPaymentForm);
   };
 
+  const resetBuildingList = () => {
+    setBuildingSearch("");
+    setBuildingStatusFilter("All");
+    setBuildingPage(1);
+    setBuildingPageSize(10);
+  };
+
   const resetPaymentList = () => {
     setPaymentSearch("");
     setPaymentTenantFilter("All");
@@ -1543,6 +1569,10 @@ function App() {
 
   const showView = (nextView: View) => {
     setFormError("");
+    if (nextView === "buildings") {
+      resetBuildingList();
+      goTo("/buildings");
+    }
     if (nextView === "units") {
       resetUnitList();
       setRentUnitID(null);
@@ -1686,7 +1716,43 @@ function App() {
           >
             Home
           </button>
-          {selectedBuildingID === "hq" ? (
+          <button
+            className={`nav-link ${view === "units" ? "active" : ""}`}
+            onClick={() => showView("units")}
+          >
+            Units
+          </button>
+          <button
+            className={`nav-link ${view === "tenants" ? "active" : ""}`}
+            onClick={() => showView("tenants")}
+          >
+            Tenants
+          </button>
+          <button
+            className={`nav-link ${view === "contracts" ? "active" : ""}`}
+            onClick={() => showView("contracts")}
+          >
+            Contracts
+          </button>
+          <button
+            className={`nav-link ${view === "invoices" ? "active" : ""}`}
+            onClick={() => showView("invoices")}
+          >
+            Invoices
+          </button>
+          <button
+            className={`nav-link ${view === "payments" ? "active" : ""}`}
+            onClick={() => showView("payments")}
+          >
+            Payments
+          </button>
+          <button
+            className={`nav-link ${view === "buildings" ? "active" : ""}`}
+            onClick={() => showView("buildings")}
+          >
+            Buildings
+          </button>
+          {selectedBuildingID === "hq" && (
             <>
               <button
                 className={`nav-link ${view === "registration" ? "active" : ""}`}
@@ -1701,47 +1767,6 @@ function App() {
                 Reports
               </button>
             </>
-          ) : (
-            <>
-              <button
-                className={`nav-link ${view === "units" ? "active" : ""}`}
-                onClick={() => showView("units")}
-              >
-                Units
-              </button>
-              <button
-                className={`nav-link ${view === "tenants" ? "active" : ""}`}
-                onClick={() => showView("tenants")}
-              >
-                Tenants
-              </button>
-              <button
-                className={`nav-link ${view === "contracts" ? "active" : ""}`}
-                onClick={() => showView("contracts")}
-              >
-                Contracts
-              </button>
-              <button
-                className={`nav-link ${view === "invoices" ? "active" : ""}`}
-                onClick={() => showView("invoices")}
-              >
-                Invoices
-              </button>
-              <button
-                className={`nav-link ${view === "payments" ? "active" : ""}`}
-                onClick={() => showView("payments")}
-              >
-                Payments
-              </button>
-            </>
-          )}
-          {selectedBuildingID === "hq" && (
-            <button
-              className={`nav-link ${view === "buildings" ? "active" : ""}`}
-              onClick={() => showView("buildings")}
-            >
-              Buildings
-            </button>
           )}
           <button
             className={`nav-link ${view === "settings" ? "active" : ""}`}
@@ -2214,100 +2239,217 @@ function App() {
         )}
 
         {view === "buildings" && (
-          <div className="panel-grid">
-            <form className="panel form-panel" onSubmit={handleSubmit}>
-              <h2>Add building</h2>
-              <label>
-                Building name
-                <input
-                  name="name"
-                  value={form.name}
-                  onChange={handleChange}
-                  placeholder="Mlimani Apartments"
-                />
-              </label>
-              <label>
-                Building code
-                <input
-                  name="code"
-                  value={form.code}
-                  onChange={handleChange}
-                  placeholder="MLM-01"
-                />
-              </label>
-              <label>
-                Address
-                <input
-                  name="address"
-                  value={form.address}
-                  onChange={handleChange}
-                  placeholder="Dar es Salaam"
-                />
-              </label>
-              <label>
-                Description
-                <textarea
-                  name="description"
-                  value={form.description}
-                  onChange={handleChange}
-                  placeholder="Residential building"
-                />
-              </label>
-              <div className="inline-fields">
+          <div className={`panel-grid buildings-workspace ${buildingPageMode}`}>
+            {buildingPageMode === "list" && (
+              <button
+                className="secondary-button buildings-add-button"
+                type="button"
+                onClick={() => goTo("/buildings/new")}
+              >
+                + Add building
+              </button>
+            )}
+            {buildingPageMode === "create" && (
+              <form className="panel form-panel" onSubmit={handleSubmit}>
+                <div className="section-heading">
+                  <h2>Add building</h2>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => goTo("/buildings")}
+                  >
+                    Back to list
+                  </button>
+                </div>
                 <label>
-                  Floors
+                  Building name
                   <input
-                    type="number"
-                    min="1"
-                    name="floors"
-                    value={form.floors}
+                    name="name"
+                    value={form.name}
                     onChange={handleChange}
+                    placeholder="Mlimani Apartments"
+                    required
                   />
                 </label>
                 <label>
-                  Status
-                  <select
-                    name="status"
-                    value={form.status}
+                  Building code
+                  <input
+                    name="code"
+                    value={form.code}
                     onChange={handleChange}
+                    placeholder="MLM-01"
+                    required
+                  />
+                </label>
+                <label>
+                  Address
+                  <input
+                    name="address"
+                    value={form.address}
+                    onChange={handleChange}
+                    placeholder="Dar es Salaam"
+                    required
+                  />
+                </label>
+                <label>
+                  Description
+                  <textarea
+                    name="description"
+                    value={form.description}
+                    onChange={handleChange}
+                    placeholder="Residential building"
+                  />
+                </label>
+                <div className="inline-fields">
+                  <label>
+                    Floors
+                    <input
+                      type="number"
+                      min="1"
+                      name="floors"
+                      value={form.floors}
+                      onChange={handleChange}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Status
+                    <select
+                      name="status"
+                      value={form.status}
+                      onChange={handleChange}
+                    >
+                      <option>Active</option>
+                      <option>Maintenance</option>
+                      <option>Closed</option>
+                    </select>
+                  </label>
+                </div>
+                <button className="primary-button" type="submit">
+                  Save building
+                </button>
+                {formError && <p className="form-error">{formError}</p>}
+              </form>
+            )}
+
+            {buildingPageMode === "list" && (
+              <div className="panel list-panel">
+                <div className="section-heading">
+                  <h2>Registered buildings</h2>
+                  <span>{filteredBuildings.length} entries</span>
+                </div>
+                <div className="unit-toolbar building-toolbar">
+                  <input
+                    value={buildingSearch}
+                    onChange={(event) => {
+                      setBuildingSearch(event.target.value);
+                      setBuildingPage(1);
+                    }}
+                    placeholder="Search name, code, address"
+                  />
+                  <select
+                    value={buildingStatusFilter}
+                    onChange={(event) => {
+                      setBuildingStatusFilter(event.target.value);
+                      setBuildingPage(1);
+                    }}
                   >
+                    <option value="All">All statuses</option>
                     <option>Active</option>
                     <option>Maintenance</option>
                     <option>Closed</option>
                   </select>
-                </label>
+                  <select
+                    value={buildingPageSize}
+                    onChange={(event) => {
+                      setBuildingPageSize(Number(event.target.value));
+                      setBuildingPage(1);
+                    }}
+                  >
+                    <option value="10">10 entries</option>
+                    <option value="25">25 entries</option>
+                    <option value="50">50 entries</option>
+                  </select>
+                </div>
+                <div className="unit-table-wrap">
+                  <table className="unit-table building-table">
+                    <thead>
+                      <tr>
+                        <th>No.</th>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Address</th>
+                        <th>Floors</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleBuildings.length === 0 ? (
+                        <tr>
+                          <td colSpan={7}>No buildings match these filters.</td>
+                        </tr>
+                      ) : (
+                        visibleBuildings.map((building, index) => (
+                          <tr key={building.id}>
+                            <td>
+                              {(buildingPage - 1) * buildingPageSize + index + 1}
+                            </td>
+                            <td>
+                              <span className="code-tag">{building.code}</span>
+                            </td>
+                            <td>
+                              <strong>{building.name}</strong>
+                            </td>
+                            <td>{building.address}</td>
+                            <td>{building.floors} floors</td>
+                            <td>{building.description || "-"}</td>
+                            <td>
+                              <span
+                                className={`table-status ${building.status.toLowerCase()}`}
+                              >
+                                {building.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="pagination">
+                  <span>
+                    Showing{" "}
+                    {visibleBuildings.length
+                      ? (buildingPage - 1) * buildingPageSize + 1
+                      : 0}{" "}
+                    to{" "}
+                    {Math.min(
+                      buildingPage * buildingPageSize,
+                      filteredBuildings.length,
+                    )}{" "}
+                    of {filteredBuildings.length}
+                  </span>
+                  <div>
+                    <button
+                      type="button"
+                      disabled={buildingPage === 1}
+                      onClick={() => setBuildingPage((page) => page - 1)}
+                    >
+                      Previous
+                    </button>
+                    <strong>{buildingPage}</strong>
+                    <button
+                      type="button"
+                      disabled={buildingPage >= buildingPageCount}
+                      onClick={() => setBuildingPage((page) => page + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
-              <button className="primary-button" type="submit">
-                Save building
-              </button>
-              {formError && <p className="form-error">{formError}</p>}
-            </form>
-
-            <div className="panel list-panel">
-              <h2>Registered buildings</h2>
-              <div className="building-list">
-                {buildings.length === 0 ? (
-                  <p className="empty-state">No buildings yet.</p>
-                ) : (
-                  buildings.map((building) => (
-                    <article className="building-card" key={building.id}>
-                      <div className="building-header">
-                        <div>
-                          <h3>{building.name}</h3>
-                          <span className="code-tag">{building.code}</span>
-                        </div>
-                        <span className="status-badge">{building.status}</span>
-                      </div>
-                      <p>{building.address}</p>
-                      <div className="meta-row">
-                        <span>{building.floors} floors</span>
-                        <span>{building.description || "No description"}</span>
-                      </div>
-                    </article>
-                  ))
-                )}
-              </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -2340,8 +2482,25 @@ function App() {
                 <p className="empty-state">
                   {selectedBuilding
                     ? `Adding to ${selectedBuilding.name}`
-                    : "Select a building above before adding a unit."}
+                    : "Select a building context or choose a building below."}
                 </p>
+                {selectedBuildingID === "hq" && (
+                  <label>
+                    Building
+                    <select
+                      value={targetBuildingID}
+                      onChange={(event) => setTargetBuildingID(event.target.value)}
+                      required
+                    >
+                      <option value="">Select building</option>
+                      {buildings.map((building) => (
+                        <option key={building.id} value={building.id}>
+                          {building.name} ({building.code})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <div className="unit-entry-list">
                   {unitRows.map((row, rowIndex) => (
                     <div className="unit-entry-row" key={rowIndex}>
@@ -2433,162 +2592,164 @@ function App() {
                 </h2>
                 <span>{filteredUnits.length} entries</span>
               </div>
-              {selectedBuildingID === "hq" ? (
-                <p className="empty-state">
-                  Choose a building to see its units.
-                </p>
-              ) : (
-                <>
-                  <div className="unit-toolbar">
-                    <input
-                      value={unitSearch}
-                      onChange={(event) => {
-                        setUnitSearch(event.target.value);
-                        setUnitPage(1);
-                      }}
-                      placeholder="Search room number"
-                    />
-                    <select
-                      value={unitFloorFilter}
-                      onChange={(event) => {
-                        setUnitFloorFilter(event.target.value);
-                        setUnitPage(1);
-                      }}
-                    >
-                      <option value="All">All floors</option>
-                      {floors.map((floor) => (
-                        <option key={floor.id} value={floor.id}>
-                          {floor.name}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={unitTypeFilter}
-                      onChange={(event) => {
-                        setUnitTypeFilter(event.target.value);
-                        setUnitPage(1);
-                      }}
-                    >
-                      <option>All</option>
-                      <option>Residential</option>
-                      <option>Commercial</option>
-                      <option>Service</option>
-                    </select>
-                    <select
-                      value={unitStatusFilter}
-                      onChange={(event) => {
-                        setUnitStatusFilter(event.target.value);
-                        setUnitPage(1);
-                      }}
-                    >
-                      <option>All</option>
-                      <option>Vacant</option>
-                      <option>Occupied</option>
-                      <option>Reserved</option>
-                      <option>Maintenance</option>
-                    </select>
-                    <select
-                      value={unitPageSize}
-                      onChange={(event) => {
-                        setUnitPageSize(Number(event.target.value));
-                        setUnitPage(1);
-                      }}
-                    >
-                      <option value="10">10 entries</option>
-                      <option value="25">25 entries</option>
-                      <option value="50">50 entries</option>
-                    </select>
-                  </div>
-                  <div className="unit-table-wrap">
-                    <table className="unit-table">
-                      <thead>
+              <>
+                <div className="unit-toolbar">
+                  <input
+                    value={unitSearch}
+                    onChange={(event) => {
+                      setUnitSearch(event.target.value);
+                      setUnitPage(1);
+                    }}
+                    placeholder="Search room number"
+                  />
+                  <select
+                    value={unitFloorFilter}
+                    onChange={(event) => {
+                      setUnitFloorFilter(event.target.value);
+                      setUnitPage(1);
+                    }}
+                  >
+                    <option value="All">All floors</option>
+                    {floors.map((floor) => (
+                      <option key={floor.id} value={floor.id}>
+                        {floor.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={unitTypeFilter}
+                    onChange={(event) => {
+                      setUnitTypeFilter(event.target.value);
+                      setUnitPage(1);
+                    }}
+                  >
+                    <option value="All">All types</option>
+                    <option>Residential</option>
+                    <option>Commercial</option>
+                    <option>Service</option>
+                  </select>
+                  <select
+                    value={unitStatusFilter}
+                    onChange={(event) => {
+                      setUnitStatusFilter(event.target.value);
+                      setUnitPage(1);
+                    }}
+                  >
+                    <option value="All">All statuses</option>
+                    <option>Vacant</option>
+                    <option>Occupied</option>
+                    <option>Reserved</option>
+                    <option>Maintenance</option>
+                  </select>
+                  <select
+                    value={unitPageSize}
+                    onChange={(event) => {
+                      setUnitPageSize(Number(event.target.value));
+                      setUnitPage(1);
+                    }}
+                  >
+                    <option value="10">10 entries</option>
+                    <option value="25">25 entries</option>
+                    <option value="50">50 entries</option>
+                  </select>
+                </div>
+                <div className="unit-table-wrap">
+                  <table className="unit-table">
+                    <thead>
+                      <tr>
+                        <th>No.</th>
+                        <th>Room No.</th>
+                        {selectedBuildingID === "hq" && <th>Building</th>}
+                        <th>Floor</th>
+                        <th>Type</th>
+                        <th>Required rent</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleUnits.length === 0 ? (
                         <tr>
-                          <th>No.</th>
-                          <th>Room No.</th>
-                          <th>Floor</th>
-                          <th>Type</th>
-                          <th>Required rent</th>
-                          <th>Status</th>
-                          <th>Actions</th>
+                          <td colSpan={selectedBuildingID === "hq" ? 8 : 7}>No units match these filters.</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {visibleUnits.length === 0 ? (
-                          <tr>
-                            <td colSpan={7}>No units match these filters.</td>
-                          </tr>
-                        ) : (
-                          visibleUnits.map((unit, index) => (
-                            <tr key={unit.id}>
+                      ) : (
+                        visibleUnits.map((unit, index) => (
+                          <tr key={unit.id}>
+                            <td>
+                              {(unitPage - 1) * unitPageSize + index + 1}
+                            </td>
+                            <td>{unit.number}</td>
+                            {selectedBuildingID === "hq" && (
                               <td>
-                                {(unitPage - 1) * unitPageSize + index + 1}
-                              </td>
-                              <td>{unit.number}</td>
-                              <td>
-                                {floors.find(
-                                  (floor) =>
-                                    String(floor.id) === String(unit.floor_id),
+                                {buildings.find(
+                                  (b) => String(b.id) === String(unit.building_id),
                                 )?.name || "-"}
                               </td>
-                              <td>
-                                <span className="code-tag">{unit.type}</span>
-                              </td>
-                              <td>{formatAmount(unit.base_rent)}</td>
-                              <td>
-                                <span
-                                  className={`table-status ${unit.status.toLowerCase()}`}
-                                >
-                                  {unit.status}
-                                </span>
-                              </td>
-                              <td>
-                                {unit.status === "Vacant" && <button className="table-action rent" type="button" onClick={() => rentUnit(unit)}>Rent</button>}
-                                <button className="table-action edit" type="button" onClick={() => void editUnit(unit)}>Edit</button>
-                                <button className="table-action delete" type="button" onClick={() => void deleteUnit(unit)}>Delete</button>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td colSpan={4}>Total required rent</td>
-                          <td>{formatAmount(filteredUnitsRentTotal)}</td>
-                          <td colSpan={2}></td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                            )}
+                            <td>
+                              {floors.find(
+                                (floor) =>
+                                  String(floor.id) === String(unit.floor_id),
+                              )?.name || "-"}
+                            </td>
+                            <td>
+                              <span className="code-tag">{unit.type}</span>
+                            </td>
+                            <td>{formatAmount(unit.base_rent)}</td>
+                            <td>
+                              <span
+                                className={`table-status ${unit.status.toLowerCase()}`}
+                              >
+                                {unit.status}
+                              </span>
+                            </td>
+                            <td>
+                              {unit.status === "Vacant" && <button className="table-action rent" type="button" onClick={() => rentUnit(unit)}>Rent</button>}
+                              <button className="table-action edit" type="button" onClick={() => void editUnit(unit)}>Edit</button>
+                              <button className="table-action delete" type="button" onClick={() => void deleteUnit(unit)}>Delete</button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={selectedBuildingID === "hq" ? 5 : 4}>Total required rent</td>
+                        <td>{formatAmount(filteredUnitsRentTotal)}</td>
+                        <td colSpan={2}></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                <div className="pagination">
+                  <span>
+                    Showing{" "}
+                    {visibleUnits.length
+                      ? (unitPage - 1) * unitPageSize + 1
+                      : 0}{" "}
+                    to{" "}
+                    {Math.min(unitPage * unitPageSize, filteredUnits.length)}{" "}
+                    of {filteredUnits.length}
+                  </span>
+                  <div>
+                    <button
+                      type="button"
+                      disabled={unitPage === 1}
+                      onClick={() => setUnitPage((page) => page - 1)}
+                    >
+                      Previous
+                    </button>
+                    <strong>{unitPage}</strong>
+                    <button
+                      type="button"
+                      disabled={unitPage >= unitPageCount}
+                      onClick={() => setUnitPage((page) => page + 1)}
+                    >
+                      Next
+                    </button>
                   </div>
-                  <div className="pagination">
-                    <span>
-                      Showing{" "}
-                      {visibleUnits.length
-                        ? (unitPage - 1) * unitPageSize + 1
-                        : 0}{" "}
-                      to{" "}
-                      {Math.min(unitPage * unitPageSize, filteredUnits.length)}{" "}
-                      of {filteredUnits.length}
-                    </span>
-                    <div>
-                      <button
-                        type="button"
-                        disabled={unitPage === 1}
-                        onClick={() => setUnitPage((page) => page - 1)}
-                      >
-                        Previous
-                      </button>
-                      <strong>{unitPage}</strong>
-                      <button
-                        type="button"
-                        disabled={unitPage >= unitPageCount}
-                        onClick={() => setUnitPage((page) => page + 1)}
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
+                </div>
+              </>
             </div>
           </div>
         )}
@@ -2973,18 +3134,17 @@ function App() {
                     name="unit_id"
                     value={contractForm.unit_id}
                     onChange={handleContractChange}
-                    disabled={selectedBuildingID === "hq" || contractPageMode === "edit"}
+                    disabled={contractPageMode === "edit"}
                   >
-                    <option value="">
-                      {selectedBuildingID === "hq"
-                        ? "Choose a building context first"
-                        : "Select unit"}
-                    </option>
-                    {units.map((unit) => (
-                      <option key={unit.id} value={unit.id}>
-                        {unit.number} - {unit.type}
-                      </option>
-                    ))}
+                    <option value="">Select unit</option>
+                    {units.map((unit) => {
+                      const building = buildings.find((b) => String(b.id) === String(unit.building_id));
+                      return (
+                        <option key={unit.id} value={unit.id}>
+                          {unit.number} - {unit.type} {building ? `(${building.name})` : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </label>
                 <div className="inline-fields">
