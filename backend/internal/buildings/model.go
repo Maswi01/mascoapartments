@@ -124,3 +124,13 @@ type DashboardSummary struct {
 	Contracts int `json:"contracts"`
 	Invoices  int `json:"invoices"`
 }
+
+// ExpenseCategory groups recurring or one-off building expenses for reporting.
+type ExpenseCategory struct {
+	ID          uint64    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}

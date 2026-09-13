@@ -50,6 +50,12 @@ const defaultForm = {
   status: "Active",
 };
 
+const defaultExpenseCategoryForm = {
+  name: "",
+  description: "",
+  status: "Active",
+};
+
 const defaultTenantForm = {
   type: "Person",
   full_name: "",
@@ -210,6 +216,12 @@ type AdminUser = {
   status: string;
   roles: string[];
 };
+type ExpenseCategoryRecord = {
+  id: string;
+  name: string;
+  description?: string;
+  status: string;
+};
 type View =
   | "home"
   | "buildings"
@@ -238,6 +250,9 @@ function App() {
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategoryRecord[]>([]);
+  const [registrationTab, setRegistrationTab] = useState<"users" | "expenses">("users");
+  const [expenseCategoryForm, setExpenseCategoryForm] = useState(defaultExpenseCategoryForm);
   const [form, setForm] = useState(defaultForm);
   const [tenantForm, setTenantForm] = useState(defaultTenantForm);
   const [tenantSearch, setTenantSearch] = useState("");
@@ -492,12 +507,14 @@ function App() {
 
   useEffect(() => {
     if (view !== "registration" || !session) return;
-    void Promise.all([apiFetch("/auth/users"), apiFetch("/auth/roles")])
-      .then(async ([usersResponse, rolesResponse]) => {
+    void Promise.all([apiFetch("/auth/users"), apiFetch("/auth/roles"), apiFetch("/expense-categories")])
+      .then(async ([usersResponse, rolesResponse, expenseCategoriesResponse]) => {
         const usersPayload = await usersResponse.json();
         const rolesPayload = await rolesResponse.json();
+        const expenseCategoriesPayload = await expenseCategoriesResponse.json();
         setAdminUsers(usersPayload.data ?? []);
         setRoles(rolesPayload.data ?? []);
+        setExpenseCategories(expenseCategoriesPayload.data ?? []);
       })
       .catch(() => {});
   }, [view, session]);
@@ -1231,6 +1248,23 @@ function App() {
     setNewUserForm({ username: "", email: "", full_name: "", password: "" });
     setView("registration");
     void showSuccess("User registered");
+  };
+
+  const handleExpenseCategorySubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const response = await apiFetch("/expense-categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(expenseCategoryForm),
+    });
+    if (!response.ok) {
+      await showRequestError(response, "Could not save expense category.");
+      return;
+    }
+    const created = (await response.json()) as ExpenseCategoryRecord;
+    setExpenseCategories((current) => [...current, created]);
+    setExpenseCategoryForm(defaultExpenseCategoryForm);
+    void showSuccess("Expense category saved");
   };
 
   const updateUserStatus = async (userID: number, status: string) => {
@@ -2051,141 +2085,233 @@ function App() {
                 building.
               </p>
             </div>
-            <div className="panel-grid">
-              <form className="panel form-panel" onSubmit={handleCreateUser}>
-                <h2>Register user</h2>
-                <label>
-                  Full name
-                  <input
-                    value={newUserForm.full_name}
-                    onChange={(event) =>
-                      setNewUserForm((current) => ({
-                        ...current,
-                        full_name: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Username
-                  <input
-                    value={newUserForm.username}
-                    onChange={(event) =>
-                      setNewUserForm((current) => ({
-                        ...current,
-                        username: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    value={newUserForm.email}
-                    onChange={(event) =>
-                      setNewUserForm((current) => ({
-                        ...current,
-                        email: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Temporary password
-                  <input
-                    type="password"
-                    minLength={8}
-                    value={newUserForm.password}
-                    onChange={(event) =>
-                      setNewUserForm((current) => ({
-                        ...current,
-                        password: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </label>
-                <button className="primary-button" type="submit">
-                  Register user
-                </button>
-              </form>
-              <div className="panel list-panel">
-                <h2>Users and access</h2>
-                <div className="building-list">
-                  {adminUsers.length === 0 ? (
-                    <p className="empty-state">
-                      No users loaded. Confirm roles and user_roles exist in the
-                      database.
-                    </p>
-                  ) : (
-                    adminUsers.map((user) => (
-                      <article className="building-card" key={user.id}>
-                        <div className="building-header">
-                          <div>
-                            <h3>{user.full_name}</h3>
-                            <span className="code-tag">{user.username}</span>
+            <nav className="sub-nav">
+              <button
+                className={`sub-nav-link ${registrationTab === "users" ? "active" : ""}`}
+                type="button"
+                onClick={() => setRegistrationTab("users")}
+              >
+                Users
+              </button>
+              <button
+                className={`sub-nav-link ${registrationTab === "expenses" ? "active" : ""}`}
+                type="button"
+                onClick={() => setRegistrationTab("expenses")}
+              >
+                Expense categories
+              </button>
+            </nav>
+            {registrationTab === "users" && (
+              <>
+                <div className="panel-grid">
+                  <form className="panel form-panel" onSubmit={handleCreateUser}>
+                    <h2>Register user</h2>
+                    <label>
+                      Full name
+                      <input
+                        value={newUserForm.full_name}
+                        onChange={(event) =>
+                          setNewUserForm((current) => ({
+                            ...current,
+                            full_name: event.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      Username
+                      <input
+                        value={newUserForm.username}
+                        onChange={(event) =>
+                          setNewUserForm((current) => ({
+                            ...current,
+                            username: event.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      Email
+                      <input
+                        type="email"
+                        value={newUserForm.email}
+                        onChange={(event) =>
+                          setNewUserForm((current) => ({
+                            ...current,
+                            email: event.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      Temporary password
+                      <input
+                        type="password"
+                        minLength={8}
+                        value={newUserForm.password}
+                        onChange={(event) =>
+                          setNewUserForm((current) => ({
+                            ...current,
+                            password: event.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </label>
+                    <button className="primary-button" type="submit">
+                      Register user
+                    </button>
+                  </form>
+                  <div className="panel list-panel">
+                    <h2>Users and access</h2>
+                    <div className="building-list">
+                      {adminUsers.length === 0 ? (
+                        <p className="empty-state">
+                          No users loaded. Confirm roles and user_roles exist in the
+                          database.
+                        </p>
+                      ) : (
+                        adminUsers.map((user) => (
+                          <article className="building-card" key={user.id}>
+                            <div className="building-header">
+                              <div>
+                                <h3>{user.full_name}</h3>
+                                <span className="code-tag">{user.username}</span>
+                              </div>
+                              <select
+                                value={user.status}
+                                onChange={(event) =>
+                                  void updateUserStatus(user.id, event.target.value)
+                                }
+                              >
+                                <option>Active</option>
+                                <option>Inactive</option>
+                                <option>Suspended</option>
+                              </select>
+                            </div>
+                            <p>{user.email}</p>
+                            <div className="meta-row">
+                              <span>
+                                {user.roles.length
+                                  ? user.roles.join(", ")
+                                  : "No role assigned"}
+                              </span>
+                              <select
+                                defaultValue=""
+                                onChange={(event) => {
+                                  if (event.target.value)
+                                    void assignUserRole(
+                                      user.id,
+                                      event.target.value,
+                                    );
+                                }}
+                              >
+                                <option value="">Assign role</option>
+                                {roles.map((role) => (
+                                  <option key={role}>{role}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </article>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="catalog-grid">
+                  <div className="catalog-card">
+                    <span>Buildings</span>
+                    <strong>{buildings.length}</strong>
+                    <small>Register and manage properties</small>
+                  </div>
+                  <div className="catalog-card">
+                    <span>Payment methods</span>
+                    <strong>6</strong>
+                    <small>Cash, bank, mobile, card, cheque, other</small>
+                  </div>
+                  <div className="catalog-card">
+                    <span>Roles</span>
+                    <strong>{roles.length}</strong>
+                    <small>Administrator, Manager, Accountant, Staff</small>
+                  </div>
+                </div>
+              </>
+            )}
+            {registrationTab === "expenses" && (
+              <div className="panel-grid">
+                <form className="panel form-panel" onSubmit={handleExpenseCategorySubmit}>
+                  <h2>Add expense category</h2>
+                  <label>
+                    Name
+                    <input
+                      value={expenseCategoryForm.name}
+                      onChange={(event) =>
+                        setExpenseCategoryForm((current) => ({
+                          ...current,
+                          name: event.target.value,
+                        }))
+                      }
+                      placeholder="Repairs and maintenance"
+                      required
+                    />
+                  </label>
+                  <label>
+                    Description
+                    <textarea
+                      value={expenseCategoryForm.description}
+                      onChange={(event) =>
+                        setExpenseCategoryForm((current) => ({
+                          ...current,
+                          description: event.target.value,
+                        }))
+                      }
+                      placeholder="What this category covers"
+                    />
+                  </label>
+                  <label>
+                    Status
+                    <select
+                      value={expenseCategoryForm.status}
+                      onChange={(event) =>
+                        setExpenseCategoryForm((current) => ({
+                          ...current,
+                          status: event.target.value,
+                        }))
+                      }
+                    >
+                      <option>Active</option>
+                      <option>Inactive</option>
+                    </select>
+                  </label>
+                  <button className="primary-button" type="submit">
+                    Save category
+                  </button>
+                </form>
+                <div className="panel list-panel">
+                  <h2>Expense categories</h2>
+                  <div className="building-list">
+                    {expenseCategories.length === 0 ? (
+                      <p className="empty-state">No expense categories yet.</p>
+                    ) : (
+                      expenseCategories.map((category) => (
+                        <article className="building-card" key={category.id}>
+                          <div className="building-header">
+                            <div>
+                              <h3>{category.name}</h3>
+                            </div>
+                            <span className="status-badge">{category.status}</span>
                           </div>
-                          <select
-                            value={user.status}
-                            onChange={(event) =>
-                              void updateUserStatus(user.id, event.target.value)
-                            }
-                          >
-                            <option>Active</option>
-                            <option>Inactive</option>
-                            <option>Suspended</option>
-                          </select>
-                        </div>
-                        <p>{user.email}</p>
-                        <div className="meta-row">
-                          <span>
-                            {user.roles.length
-                              ? user.roles.join(", ")
-                              : "No role assigned"}
-                          </span>
-                          <select
-                            defaultValue=""
-                            onChange={(event) => {
-                              if (event.target.value)
-                                void assignUserRole(
-                                  user.id,
-                                  event.target.value,
-                                );
-                            }}
-                          >
-                            <option value="">Assign role</option>
-                            {roles.map((role) => (
-                              <option key={role}>{role}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </article>
-                    ))
-                  )}
+                          <p>{category.description || "No description"}</p>
+                        </article>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="catalog-grid">
-              <div className="catalog-card">
-                <span>Buildings</span>
-                <strong>{buildings.length}</strong>
-                <small>Register and manage properties</small>
-              </div>
-              <div className="catalog-card">
-                <span>Payment methods</span>
-                <strong>6</strong>
-                <small>Cash, bank, mobile, card, cheque, other</small>
-              </div>
-              <div className="catalog-card">
-                <span>Roles</span>
-                <strong>{roles.length}</strong>
-                <small>Administrator, Manager, Accountant, Staff</small>
-              </div>
-            </div>
+            )}
           </div>
         )}
 

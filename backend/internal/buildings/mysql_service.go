@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -13,6 +14,16 @@ type MySQLService struct {
 }
 
 func NewMySQLService(db *sql.DB) *MySQLService {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS expense_categories (
+		id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+		name VARCHAR(191) NOT NULL,
+		description TEXT NULL,
+		status VARCHAR(32) NOT NULL DEFAULT 'Active',
+		created_at DATETIME NOT NULL,
+		updated_at DATETIME NOT NULL
+	)`); err != nil {
+		log.Printf("ensure expense_categories table: %v", err)
+	}
 	return &MySQLService{db: db}
 }
 
@@ -546,4 +557,40 @@ func (s *MySQLService) DashboardSummary(buildingID uint64) DashboardSummary {
 		_ = s.db.QueryRow(query, args...).Scan(counter.destination)
 	}
 	return summary
+}
+
+func (s *MySQLService) CreateExpenseCategory(category ExpenseCategory) (*ExpenseCategory, error) {
+	if category.Name == "" {
+		return nil, errors.New("expense category name is required")
+	}
+	if category.Status == "" {
+		category.Status = "Active"
+	}
+	category.CreatedAt = time.Now()
+	category.UpdatedAt = category.CreatedAt
+	result, err := s.db.Exec(`INSERT INTO expense_categories (name, description, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, category.Name, category.Description, category.Status, category.CreatedAt, category.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("save expense category: %w", err)
+	}
+	category.ID, err = databaseID(result)
+	if err != nil {
+		return nil, fmt.Errorf("read expense category id: %w", err)
+	}
+	return &category, nil
+}
+
+func (s *MySQLService) ListExpenseCategories() []*ExpenseCategory {
+	rows, err := s.db.Query(`SELECT id, name, COALESCE(description, ''), status, created_at, updated_at FROM expense_categories ORDER BY name`)
+	if err != nil {
+		return []*ExpenseCategory{}
+	}
+	defer rows.Close()
+	items := make([]*ExpenseCategory, 0)
+	for rows.Next() {
+		item := &ExpenseCategory{}
+		if rows.Scan(&item.ID, &item.Name, &item.Description, &item.Status, &item.CreatedAt, &item.UpdatedAt) == nil {
+			items = append(items, item)
+		}
+	}
+	return items
 }

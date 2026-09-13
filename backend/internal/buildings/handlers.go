@@ -42,6 +42,8 @@ type ServiceAPI interface {
 	ListInvoices(uint64) []*Invoice
 	CreatePayment(Payment) (*Payment, error)
 	ListPayments(uint64) []*Payment
+	CreateExpenseCategory(ExpenseCategory) (*ExpenseCategory, error)
+	ListExpenseCategories() []*ExpenseCategory
 	DashboardSummary(uint64) DashboardSummary
 }
 
@@ -78,6 +80,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/invoices", h.createInvoice)
 	mux.HandleFunc("GET /api/v1/payments", h.listPayments)
 	mux.HandleFunc("POST /api/v1/payments", h.createPayment)
+	mux.HandleFunc("GET /api/v1/expense-categories", h.listExpenseCategories)
+	mux.HandleFunc("POST /api/v1/expense-categories", h.createExpenseCategory)
 }
 
 func (h *Handler) dashboard(writer http.ResponseWriter, request *http.Request) {
@@ -548,6 +552,27 @@ func (h *Handler) createPayment(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	created, err := h.service.CreatePayment(payment)
+	if err != nil {
+		writeJSONError(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusCreated)
+	json.NewEncoder(writer).Encode(created)
+}
+
+func (h *Handler) listExpenseCategories(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(writer).Encode(map[string]interface{}{"data": h.service.ListExpenseCategories()})
+}
+
+func (h *Handler) createExpenseCategory(writer http.ResponseWriter, request *http.Request) {
+	var category ExpenseCategory
+	if err := json.NewDecoder(request.Body).Decode(&category); err != nil {
+		writeJSONError(writer, http.StatusBadRequest, "invalid expense category payload")
+		return
+	}
+	created, err := h.service.CreateExpenseCategory(category)
 	if err != nil {
 		writeJSONError(writer, http.StatusBadRequest, err.Error())
 		return

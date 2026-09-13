@@ -19,21 +19,22 @@ var (
 
 // Service is a simple in-memory implementation for the initial MVP.
 type Service struct {
-	buildings map[uint64]*Building
-	floors    map[uint64]*Floor
-	units     map[uint64]*Unit
-	tenants   map[uint64]*Tenant
-	contracts map[uint64]*Contract
-	invoices  map[uint64]*Invoice
-	payments  map[uint64]*Payment
-	documents map[uint64]*Document
+	buildings         map[uint64]*Building
+	floors            map[uint64]*Floor
+	units             map[uint64]*Unit
+	tenants           map[uint64]*Tenant
+	contracts         map[uint64]*Contract
+	invoices          map[uint64]*Invoice
+	payments          map[uint64]*Payment
+	documents         map[uint64]*Document
+	expenseCategories map[uint64]*ExpenseCategory
 }
 
 func NewService() *Service {
 	return &Service{
 		buildings: map[uint64]*Building{}, floors: map[uint64]*Floor{}, units: map[uint64]*Unit{},
 		tenants: map[uint64]*Tenant{}, contracts: map[uint64]*Contract{}, invoices: map[uint64]*Invoice{},
-		payments: map[uint64]*Payment{}, documents: map[uint64]*Document{},
+		payments: map[uint64]*Payment{}, documents: map[uint64]*Document{}, expenseCategories: map[uint64]*ExpenseCategory{},
 	}
 }
 
@@ -431,4 +432,26 @@ func (s *Service) DashboardSummary(buildingID uint64) DashboardSummary {
 		}
 	}
 	return summary
+}
+
+func (s *Service) CreateExpenseCategory(category ExpenseCategory) (*ExpenseCategory, error) {
+	if category.Name == "" {
+		return nil, errors.New("expense category name is required")
+	}
+	category.ID = uint64(len(s.expenseCategories) + 1)
+	if category.Status == "" {
+		category.Status = "Active"
+	}
+	category.CreatedAt = time.Now()
+	category.UpdatedAt = category.CreatedAt
+	s.expenseCategories[category.ID] = &category
+	return s.expenseCategories[category.ID], nil
+}
+
+func (s *Service) ListExpenseCategories() []*ExpenseCategory {
+	items := make([]*ExpenseCategory, 0, len(s.expenseCategories))
+	for _, category := range s.expenseCategories {
+		items = append(items, category)
+	}
+	return items
 }
