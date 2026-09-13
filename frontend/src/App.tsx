@@ -250,8 +250,12 @@ function App() {
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [rolePermissions, setRolePermissions] = useState<string[]>([]);
+  const [selectedRole, setSelectedRole] = useState("");
+  const [newRoleName, setNewRoleName] = useState("");
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategoryRecord[]>([]);
-  const [registrationTab, setRegistrationTab] = useState<"users" | "expenses">("users");
+  const [registrationTab, setRegistrationTab] = useState<"users" | "roles" | "expenses">("users");
   const [expenseCategoryForm, setExpenseCategoryForm] = useState(defaultExpenseCategoryForm);
   const [form, setForm] = useState(defaultForm);
   const [tenantForm, setTenantForm] = useState(defaultTenantForm);
@@ -507,17 +511,28 @@ function App() {
 
   useEffect(() => {
     if (view !== "registration" || !session) return;
-    void Promise.all([apiFetch("/auth/users"), apiFetch("/auth/roles"), apiFetch("/expense-categories")])
-      .then(async ([usersResponse, rolesResponse, expenseCategoriesResponse]) => {
+    void Promise.all([apiFetch("/auth/users"), apiFetch("/auth/roles"), apiFetch("/auth/permissions"), apiFetch("/expense-categories")])
+      .then(async ([usersResponse, rolesResponse, permissionsResponse, expenseCategoriesResponse]) => {
         const usersPayload = await usersResponse.json();
         const rolesPayload = await rolesResponse.json();
+        const permissionsPayload = await permissionsResponse.json();
         const expenseCategoriesPayload = await expenseCategoriesResponse.json();
         setAdminUsers(usersPayload.data ?? []);
         setRoles(rolesPayload.data ?? []);
+        setPermissions(permissionsPayload.data ?? []);
         setExpenseCategories(expenseCategoriesPayload.data ?? []);
+        setSelectedRole((current) => current || (rolesPayload.data ?? [])[0] || "");
       })
       .catch(() => {});
   }, [view, session]);
+
+  useEffect(() => {
+    if (view !== "registration" || registrationTab !== "roles" || !selectedRole) return;
+    void apiFetch(`/auth/roles/${encodeURIComponent(selectedRole)}/permissions`)
+      .then((response) => (response.ok ? response.json() : { data: [] }))
+      .then((payload) => setRolePermissions(payload.data ?? []))
+      .catch(() => setRolePermissions([]));
+  }, [view, registrationTab, selectedRole]);
 
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
@@ -1265,6 +1280,43 @@ function App() {
     setExpenseCategories((current) => [...current, created]);
     setExpenseCategoryForm(defaultExpenseCategoryForm);
     void showSuccess("Expense category saved");
+  };
+
+  const handleCreateRole = async (event: FormEvent) => {
+    event.preventDefault();
+    const response = await apiFetch("/auth/roles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newRoleName }),
+    });
+    if (!response.ok) {
+      await showRequestError(response, "Could not create role.");
+      return;
+    }
+    setRoles((current) => [...current, newRoleName]);
+    setSelectedRole(newRoleName);
+    setNewRoleName("");
+    void showSuccess("Role created");
+  };
+
+  const toggleRolePermission = async (permission: string, granted: boolean) => {
+    if (!selectedRole) return;
+    const response = granted
+      ? await apiFetch(`/auth/roles/${encodeURIComponent(selectedRole)}/permissions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ permission }),
+        })
+      : await apiFetch(`/auth/roles/${encodeURIComponent(selectedRole)}/permissions/${encodeURIComponent(permission)}`, {
+          method: "DELETE",
+        });
+    if (!response.ok) {
+      await showRequestError(response, "Could not update role permission.");
+      return;
+    }
+    setRolePermissions((current) =>
+      granted ? [...current, permission] : current.filter((item) => item !== permission),
+    );
   };
 
   const updateUserStatus = async (userID: number, status: string) => {
@@ -2094,6 +2146,13 @@ function App() {
                 Users
               </button>
               <button
+                className={`sub-nav-link ${registrationTab === "roles" ? "active" : ""}`}
+                type="button"
+                onClick={() => setRegistrationTab("roles")}
+              >
+                Roles &amp; permissions
+              </button>
+              <button
                 className={`sub-nav-link ${registrationTab === "expenses" ? "active" : ""}`}
                 type="button"
                 onClick={() => setRegistrationTab("expenses")}
@@ -2239,6 +2298,60 @@ function App() {
                   </div>
                 </div>
               </>
+            )}
+            {registrationTab === "roles" && (
+              <div className="panel-grid">
+                <form className="panel form-panel" onSubmit={handleCreateRole}>
+                  <h2>Add role</h2>
+                  <label>
+                    Role name
+                    <input
+                      value={newRoleName}
+                      onChange={(event) => setNewRoleName(event.target.value)}
+                      placeholder="Supervisor"
+                      required
+                    />
+                  </label>
+                  <button className="primary-button" type="submit">
+                    Save role
+                  </button>
+                </form>
+                <div className="panel list-panel">
+                  <h2>Permissions</h2>
+                  <label>
+                    Role
+                    <select
+                      value={selectedRole}
+                      onChange={(event) => setSelectedRole(event.target.value)}
+                    >
+                      <option value="">Select role</option>
+                      {roles.map((role) => (
+                        <option key={role} value={role}>
+                          {role}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {selectedRole ? (
+                    <div className="permission-list">
+                      {permissions.map((permission) => (
+                        <label className="permission-toggle" key={permission}>
+                          <input
+                            type="checkbox"
+                            checked={rolePermissions.includes(permission)}
+                            onChange={(event) =>
+                              void toggleRolePermission(permission, event.target.checked)
+                            }
+                          />
+                          {permission.replaceAll("_", " ")}
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="empty-state">Select a role to manage its permissions.</p>
+                  )}
+                </div>
+              </div>
             )}
             {registrationTab === "expenses" && (
               <div className="panel-grid">

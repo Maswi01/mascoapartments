@@ -40,6 +40,11 @@ func main() {
 	mux.Handle("GET /api/v1/auth/users", adminOnly(usersHandler(authService)))
 	mux.Handle("POST /api/v1/auth/users", adminOnly(createUserHandler(authService)))
 	mux.Handle("GET /api/v1/auth/roles", adminOnly(rolesHandler(authService)))
+	mux.Handle("POST /api/v1/auth/roles", adminOnly(createRoleHandler(authService)))
+	mux.Handle("GET /api/v1/auth/permissions", adminOnly(permissionsHandler(authService)))
+	mux.Handle("GET /api/v1/auth/roles/{role}/permissions", adminOnly(rolePermissionsHandler(authService)))
+	mux.Handle("POST /api/v1/auth/roles/{role}/permissions", adminOnly(grantRolePermissionHandler(authService)))
+	mux.Handle("DELETE /api/v1/auth/roles/{role}/permissions/{permission}", adminOnly(revokeRolePermissionHandler(authService)))
 	mux.Handle("PATCH /api/v1/auth/users/{id}/status", adminOnly(updateUserStatusHandler(authService)))
 	mux.Handle("POST /api/v1/auth/users/{id}/roles", adminOnly(assignRoleHandler(authService)))
 	handler.RegisterRoutes(mux)
@@ -219,6 +224,74 @@ func rolesHandler(authService *auth.Service) http.HandlerFunc {
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(writer).Encode(map[string]interface{}{"data": roles})
+	}
+}
+
+func createRoleHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		var input struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, "invalid role payload")
+			return
+		}
+		if err := authService.CreateRole(input.Name); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		writer.WriteHeader(http.StatusCreated)
+	}
+}
+
+func permissionsHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		permissions, err := authService.ListPermissions()
+		if err != nil {
+			writeAuthError(writer, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(writer).Encode(map[string]interface{}{"data": permissions})
+	}
+}
+
+func rolePermissionsHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		permissions, err := authService.ListRolePermissions(request.PathValue("role"))
+		if err != nil {
+			writeAuthError(writer, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(writer).Encode(map[string]interface{}{"data": permissions})
+	}
+}
+
+func grantRolePermissionHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		var input struct {
+			Permission string `json:"permission"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, "invalid permission payload")
+			return
+		}
+		if err := authService.SetRolePermission(request.PathValue("role"), input.Permission, true); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func revokeRolePermissionHandler(authService *auth.Service) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if err := authService.SetRolePermission(request.PathValue("role"), request.PathValue("permission"), false); err != nil {
+			writeAuthError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
 	}
 }
 

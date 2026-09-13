@@ -32,11 +32,50 @@ type Service struct {
 	jwtSecret []byte
 }
 
+// defaultPermissions seeds the permission catalog used to gate feature access per role.
+var defaultPermissions = []string{
+	"manage_buildings",
+	"manage_units",
+	"manage_tenants",
+	"manage_contracts",
+	"manage_invoices",
+	"manage_payments",
+	"manage_expenses",
+	"manage_users",
+	"view_reports",
+}
+
 func NewService(db *sql.DB, jwtSecret string) (*Service, error) {
 	if len(jwtSecret) < 32 {
 		return nil, errors.New("JWT_SECRET must contain at least 32 characters")
 	}
-	return &Service{db: db, jwtSecret: []byte(jwtSecret)}, nil
+	service := &Service{db: db, jwtSecret: []byte(jwtSecret)}
+	if err := service.ensurePermissionTables(); err != nil {
+		return nil, err
+	}
+	return service, nil
+}
+
+func (s *Service) ensurePermissionTables() error {
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS permissions (
+		id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+		name VARCHAR(191) NOT NULL UNIQUE
+	)`); err != nil {
+		return fmt.Errorf("ensure permissions table: %w", err)
+	}
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS role_permissions (
+		role_id BIGINT UNSIGNED NOT NULL,
+		permission_id BIGINT UNSIGNED NOT NULL,
+		PRIMARY KEY (role_id, permission_id)
+	)`); err != nil {
+		return fmt.Errorf("ensure role_permissions table: %w", err)
+	}
+	for _, name := range defaultPermissions {
+		if _, err := s.db.Exec(`INSERT IGNORE INTO permissions (name) VALUES (?)`, name); err != nil {
+			return fmt.Errorf("seed permission %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func (s *Service) Login(usernameOrEmail string, password string) (string, *User, error) {
@@ -219,6 +258,68 @@ func (s *Service) AssignRole(userID uint64, roleName string) error {
 		return errors.New("role not found")
 	}
 	_, err := s.db.Exec(`INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)`, userID, roleID)
+	return err
+}
+
+func (s *Service) CreateRole(name string) error {
+	if name == "" {
+		return errors.New("role name is required")
+	}
+	_, err := s.db.Exec(`INSERT INTO roles (name) VALUES (?)`, name)
+	if err != nil {
+		return fmt.Errorf("create role: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) ListPermissions() ([]string, error) {
+	rows, err := s.db.Query(`SELECT name FROM permissions ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list permissions: %w", err)
+	}
+	defer rows.Close()
+	permissions := make([]string, 0)
+	for rows.Next() {
+		var permission string
+		if err := rows.Scan(&permission); err != nil {
+			return nil, err
+		}
+		permissions = append(permissions, permission)
+	}
+	return permissions, rows.Err()
+}
+
+func (s *Service) ListRolePermissions(roleName string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT p.name FROM permissions p JOIN role_permissions rp ON rp.permission_id = p.id JOIN roles r ON r.id = rp.role_id WHERE r.name = ? ORDER BY p.name`, roleName)
+	if err != nil {
+		return nil, fmt.Errorf("list role permissions: %w", err)
+	}
+	defer rows.Close()
+	permissions := make([]string, 0)
+	for rows.Next() {
+		var permission string
+		if err := rows.Scan(&permission); err != nil {
+			return nil, err
+		}
+		permissions = append(permissions, permission)
+	}
+	return permissions, rows.Err()
+}
+
+func (s *Service) SetRolePermission(roleName string, permissionName string, granted bool) error {
+	var roleID uint64
+	if err := s.db.QueryRow(`SELECT id FROM roles WHERE name = ?`, roleName).Scan(&roleID); err != nil {
+		return errors.New("role not found")
+	}
+	var permissionID uint64
+	if err := s.db.QueryRow(`SELECT id FROM permissions WHERE name = ?`, permissionName).Scan(&permissionID); err != nil {
+		return errors.New("permission not found")
+	}
+	if granted {
+		_, err := s.db.Exec(`INSERT IGNORE INTO role_permissions (role_id, permission_id) VALUES (?, ?)`, roleID, permissionID)
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM role_permissions WHERE role_id = ? AND permission_id = ?`, roleID, permissionID)
 	return err
 }
 
