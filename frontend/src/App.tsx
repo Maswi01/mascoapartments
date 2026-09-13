@@ -1716,44 +1716,14 @@ function App() {
           >
             Home
           </button>
-          <button
-            className={`nav-link ${view === "units" ? "active" : ""}`}
-            onClick={() => showView("units")}
-          >
-            Units
-          </button>
-          <button
-            className={`nav-link ${view === "tenants" ? "active" : ""}`}
-            onClick={() => showView("tenants")}
-          >
-            Tenants
-          </button>
-          <button
-            className={`nav-link ${view === "contracts" ? "active" : ""}`}
-            onClick={() => showView("contracts")}
-          >
-            Contracts
-          </button>
-          <button
-            className={`nav-link ${view === "invoices" ? "active" : ""}`}
-            onClick={() => showView("invoices")}
-          >
-            Invoices
-          </button>
-          <button
-            className={`nav-link ${view === "payments" ? "active" : ""}`}
-            onClick={() => showView("payments")}
-          >
-            Payments
-          </button>
-          <button
-            className={`nav-link ${view === "buildings" ? "active" : ""}`}
-            onClick={() => showView("buildings")}
-          >
-            Buildings
-          </button>
-          {selectedBuildingID === "hq" && (
+          {selectedBuildingID === "hq" ? (
             <>
+              <button
+                className={`nav-link ${view === "buildings" ? "active" : ""}`}
+                onClick={() => showView("buildings")}
+              >
+                Buildings
+              </button>
               <button
                 className={`nav-link ${view === "registration" ? "active" : ""}`}
                 onClick={() => showView("registration")}
@@ -1765,6 +1735,39 @@ function App() {
                 onClick={() => showView("reports")}
               >
                 Reports
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className={`nav-link ${view === "units" ? "active" : ""}`}
+                onClick={() => showView("units")}
+              >
+                Units
+              </button>
+              <button
+                className={`nav-link ${view === "tenants" ? "active" : ""}`}
+                onClick={() => showView("tenants")}
+              >
+                Tenants
+              </button>
+              <button
+                className={`nav-link ${view === "contracts" ? "active" : ""}`}
+                onClick={() => showView("contracts")}
+              >
+                Contracts
+              </button>
+              <button
+                className={`nav-link ${view === "invoices" ? "active" : ""}`}
+                onClick={() => showView("invoices")}
+              >
+                Invoices
+              </button>
+              <button
+                className={`nav-link ${view === "payments" ? "active" : ""}`}
+                onClick={() => showView("payments")}
+              >
+                Payments
               </button>
             </>
           )}
