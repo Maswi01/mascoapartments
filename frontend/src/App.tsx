@@ -219,6 +219,7 @@ type ExpenseCategoryRecord = {
   name: string;
   created_at?: string;
 };
+type ReportMode = "tenants" | "transactions" | "expenses" | "cashflow" | "rent";
 type View =
   | "home"
   | "buildings"
@@ -327,6 +328,8 @@ function App() {
   const [documentContractID, setDocumentContractID] = useState("");
   const [documentName, setDocumentName] = useState("");
   const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [reportsNavOpen, setReportsNavOpen] = useState(false);
+  const [reportMode, setReportMode] = useState<ReportMode>("tenants");
   const [view, setView] = useState<View>("home");
   const [selectedBuildingID, setSelectedBuildingID] = useState(
     () => localStorage.getItem("masco-building-id") ?? "hq",
@@ -368,6 +371,11 @@ function App() {
     if (path === "/payments/new") setPaymentPageMode("create");
     if (path === "/buildings") setBuildingPageMode("list");
     if (path === "/buildings/new") setBuildingPageMode("create");
+    if (path === "/reports/tenants") setReportMode("tenants");
+    if (path === "/reports/transactions") setReportMode("transactions");
+    if (path === "/reports/expenses") setReportMode("expenses");
+    if (path === "/reports/cash-flow") setReportMode("cashflow");
+    if (path === "/reports/monthly-rent") setReportMode("rent");
   };
 
   const logout = () => {
@@ -521,6 +529,10 @@ function App() {
 
   useEffect(() => {
     if (view === "registration") setRegistrationNavOpen(true);
+  }, [view]);
+
+  useEffect(() => {
+    if (view === "reports") setReportsNavOpen(true);
   }, [view]);
 
   useEffect(() => {
@@ -1854,6 +1866,29 @@ function App() {
     setView("home");
   };
 
+  const openReport = (mode: ReportMode) => {
+    setReportMode(mode);
+    setView("reports");
+    const pathByMode: Record<ReportMode, string> = {
+      tenants: "/reports/tenants",
+      transactions: "/reports/transactions",
+      expenses: "/reports/expenses",
+      cashflow: "/reports/cash-flow",
+      rent: "/reports/monthly-rent",
+    };
+    goTo(pathByMode[mode]);
+  };
+
+  const reportLinks = (
+    <div className="nav-subgroup">
+      <button className={`nav-sublink ${view === "reports" && reportMode === "tenants" ? "active" : ""}`} type="button" onClick={() => openReport("tenants")}>{selectedBuildingID === "hq" ? "All tenants" : "Tenant statement"}</button>
+      <button className={`nav-sublink ${view === "reports" && reportMode === "transactions" ? "active" : ""}`} type="button" onClick={() => openReport("transactions")}>Transaction statement</button>
+      <button className={`nav-sublink ${view === "reports" && reportMode === "expenses" ? "active" : ""}`} type="button" onClick={() => openReport("expenses")}>Expenses statement</button>
+      <button className={`nav-sublink ${view === "reports" && reportMode === "cashflow" ? "active" : ""}`} type="button" onClick={() => openReport("cashflow")}>Cash flow statement</button>
+      <button className={`nav-sublink ${view === "reports" && reportMode === "rent" ? "active" : ""}`} type="button" onClick={() => openReport("rent")}>Monthly rent report</button>
+    </div>
+  );
+
   return (
     <main className="page-shell">
       <aside className="sidebar">
@@ -1926,12 +1961,17 @@ function App() {
                   </div>
                 )}
               </div>
-              <button
-                className={`nav-link ${view === "reports" ? "active" : ""}`}
-                onClick={() => showView("reports")}
-              >
-                Reports
-              </button>
+              <div className="nav-group">
+                <button
+                  className={`nav-link nav-group-toggle ${view === "reports" ? "active" : ""}`}
+                  type="button"
+                  onClick={() => setReportsNavOpen((open) => !open)}
+                >
+                  Reports
+                  <span className={`nav-chevron ${reportsNavOpen ? "open" : ""}`}>▾</span>
+                </button>
+                {reportsNavOpen && reportLinks}
+              </div>
             </>
           ) : (
             <>
@@ -1965,6 +2005,17 @@ function App() {
               >
                 Payments
               </button>
+              <div className="nav-group">
+                <button
+                  className={`nav-link nav-group-toggle ${view === "reports" ? "active" : ""}`}
+                  type="button"
+                  onClick={() => setReportsNavOpen((open) => !open)}
+                >
+                  Reports
+                  <span className={`nav-chevron ${reportsNavOpen ? "open" : ""}`}>▾</span>
+                </button>
+                {reportsNavOpen && reportLinks}
+              </div>
             </>
           )}
           <button
@@ -2741,52 +2792,55 @@ function App() {
         {view === "reports" && (
           <div className="reports-layout">
             <div className="registration-intro">
-              <p className="eyebrow">Office reports</p>
-              <h2>All buildings combined</h2>
+              <p className="eyebrow">Reports</p>
+              <h2>{selectedBuildingID === "hq" ? "All buildings combined" : selectedBuilding?.name || "Building reports"}</h2>
               <p>
-                Portfolio-wide statements for administration and owner review.
+                {selectedBuildingID === "hq" ? "Portfolio-wide statements for administration and owner review." : "Building-level statements for daily property operations."}
               </p>
             </div>
-            <div className="reports-grid">
-              <div className="report-card">
-                <span>Transaction statement</span>
-                <strong>{payments.length}</strong>
-                <small>Recorded payments across all buildings</small>
+            {reportMode === "tenants" && (
+              <div className="panel list-panel report-panel">
+                <div className="section-heading"><h2>{selectedBuildingID === "hq" ? "All tenants by building" : "Tenant statement"}</h2><span>{tenants.length} entries</span></div>
+                <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>No.</th><th>Tenant</th><th>Phone</th>{selectedBuildingID === "hq" && <th>Building</th>}<th>Units</th><th>Active contracts</th><th>Total rent</th></tr></thead><tbody>
+                  {tenants.length === 0 ? <tr><td colSpan={selectedBuildingID === "hq" ? 7 : 6}>No tenants found.</td></tr> : tenants.map((tenant, index) => {
+                    const tenantContracts = contracts.filter((contract) => String(contract.tenant_id) === String(tenant.id) && contract.status === "Active");
+                    const tenantUnits = tenantContracts.map((contract) => units.find((unit) => String(unit.id) === String(contract.unit_id))?.number).filter(Boolean);
+                    const building = buildings.find((item) => String(item.id) === String(tenant.building_id));
+                    return <tr key={tenant.id}><td>{index + 1}</td><td>{tenant.full_name || tenant.company_name || "Unnamed tenant"}</td><td>{tenant.phone || "-"}</td>{selectedBuildingID === "hq" && <td>{building?.name || "-"}</td>}<td>{tenantUnits.length ? tenantUnits.join(", ") : "-"}</td><td>{tenantContracts.length}</td><td>{formatAmount(tenantContracts.reduce((total, contract) => total + contract.monthly_rent, 0))}</td></tr>;
+                  })}
+                </tbody></table></div>
               </div>
-              <div className="report-card">
-                <span>Expenses statement</span>
-                <strong>0</strong>
-                <small>Expenses will appear here when registered</small>
+            )}
+            {reportMode === "transactions" && (
+              <div className="panel list-panel report-panel">
+                <div className="section-heading"><h2>Transaction statement</h2><span>Total {formatAmount(scopedPayments.reduce((total, payment) => total + payment.amount, 0))}</span></div>
+                <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>No.</th><th>Date</th><th>Tenant</th><th>Unit</th><th>Invoice</th><th>Reference</th><th>Method</th><th>Amount</th></tr></thead><tbody>
+                  {scopedPayments.length === 0 ? <tr><td colSpan={8}>No transactions recorded.</td></tr> : scopedPayments.map((payment, index) => { const tenant = tenants.find((item) => String(item.id) === String(payment.tenant_id)); const unit = units.find((item) => String(item.id) === String(payment.unit_id)); const invoice = invoices.find((item) => String(item.id) === String(payment.invoice_id)); return <tr key={payment.id}><td>{index + 1}</td><td>{dateOnly(payment.payment_date)}</td><td>{tenant?.full_name || tenant?.company_name || "-"}</td><td>{unit?.number || "-"}</td><td>{invoice?.number || payment.invoice_id}</td><td>{payment.payment_reference}</td><td>{payment.payment_method}</td><td>{formatAmount(payment.amount)}</td></tr>; })}
+                </tbody></table></div>
               </div>
-              <div className="report-card">
-                <span>Monthly rent statement</span>
-                <strong>{invoices.length}</strong>
-                <small>Generated invoices across the portfolio</small>
+            )}
+            {reportMode === "expenses" && (
+              <div className="panel list-panel report-panel">
+                <div className="section-heading"><h2>Expenses statement</h2><span>{expenseCategories.length} categories</span></div>
+                <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>No.</th><th>Category</th><th>Recorded amount</th></tr></thead><tbody>
+                  {expenseCategories.length === 0 ? <tr><td colSpan={3}>No expense categories registered.</td></tr> : expenseCategories.map((category, index) => <tr key={category.id}><td>{index + 1}</td><td>{category.name}</td><td>{formatAmount(0)}</td></tr>)}
+                </tbody><tfoot><tr><td colSpan={2}>Total expenses</td><td>{formatAmount(0)}</td></tr></tfoot></table></div>
               </div>
-              <div className="report-card">
-                <span>Tenant statement</span>
-                <strong>{tenants.length}</strong>
-                <small>Tenants with active portfolio records</small>
+            )}
+            {reportMode === "cashflow" && (
+              <div className="panel list-panel report-panel">
+                <div className="section-heading"><h2>Cash flow statement</h2><span>Net {formatAmount(totalPaid)}</span></div>
+                <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>Type</th><th>Description</th><th>Inflow</th><th>Outflow</th><th>Net</th></tr></thead><tbody><tr><td>Income</td><td>Rent and invoice payments</td><td>{formatAmount(totalPaid)}</td><td>{formatAmount(0)}</td><td>{formatAmount(totalPaid)}</td></tr><tr><td>Expense</td><td>Recorded expenses</td><td>{formatAmount(0)}</td><td>{formatAmount(0)}</td><td>{formatAmount(0)}</td></tr></tbody><tfoot><tr><td colSpan={2}>Net cash flow</td><td>{formatAmount(totalPaid)}</td><td>{formatAmount(0)}</td><td>{formatAmount(totalPaid)}</td></tr></tfoot></table></div>
               </div>
-            </div>
-            <div className="panel table-panel">
-              <div className="section-heading">
-                <h2>Recent transactions</h2>
-                <span>All buildings</span>
+            )}
+            {reportMode === "rent" && (
+              <div className="panel list-panel report-panel">
+                <div className="section-heading"><h2>Monthly rent report</h2><span>Total {formatAmount(totalContractRent)}</span></div>
+                <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>No.</th><th>Tenant</th><th>Unit</th><th>Start</th><th>End</th><th>Monthly rent</th><th>Status</th></tr></thead><tbody>
+                  {scopedContracts.length === 0 ? <tr><td colSpan={7}>No contracts found.</td></tr> : scopedContracts.map((contract, index) => { const tenant = tenants.find((item) => String(item.id) === String(contract.tenant_id)); const unit = units.find((item) => String(item.id) === String(contract.unit_id)); return <tr key={contract.id}><td>{index + 1}</td><td>{tenant?.full_name || tenant?.company_name || "-"}</td><td>{unit?.number || "-"}</td><td>{dateOnly(contract.start_date)}</td><td>{dateOnly(contract.end_date)}</td><td>{formatAmount(contract.monthly_rent)}</td><td><span className={`table-status ${contract.status.toLowerCase()}`}>{contract.status}</span></td></tr>; })}
+                </tbody><tfoot><tr><td colSpan={5}>Total monthly rent</td><td>{formatAmount(totalContractRent)}</td><td></td></tr></tfoot></table></div>
               </div>
-              {payments.length === 0 ? (
-                <p className="empty-state">No transactions recorded.</p>
-              ) : (
-                payments.slice(0, 12).map((payment) => (
-                  <div className="dashboard-row" key={payment.id}>
-                    <strong>{payment.payment_reference}</strong>
-                    <span>{payment.payment_method}</span>
-                    <span>{formatAmount(payment.amount)}</span>
-                    <span>{payment.payment_date}</span>
-                  </div>
-                ))
-              )}
-            </div>
+            )}
           </div>
         )}
 
