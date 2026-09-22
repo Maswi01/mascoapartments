@@ -54,6 +54,15 @@ const defaultExpenseCategoryForm = {
   name: "",
 };
 
+const defaultExpenseForm = {
+  building_id: "",
+  category_id: "",
+  amount: "",
+  expense_date: new Date().toISOString().slice(0, 10),
+  reference: "",
+  notes: "",
+};
+
 const defaultTenantForm = {
   type: "Person",
   full_name: "",
@@ -219,6 +228,16 @@ type ExpenseCategoryRecord = {
   name: string;
   created_at?: string;
 };
+type ExpenseRecord = {
+  id: string;
+  building_id: string;
+  category_id: string;
+  amount: number;
+  expense_date: string;
+  reference?: string;
+  notes?: string;
+  created_at?: string;
+};
 type ReportMode = "tenants" | "transactions" | "expenses" | "cashflow" | "rent";
 type View =
   | "home"
@@ -253,9 +272,11 @@ function App() {
   const [selectedRole, setSelectedRole] = useState("");
   const [newRoleName, setNewRoleName] = useState("");
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategoryRecord[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [registrationTab, setRegistrationTab] = useState<"users" | "roles" | "expenses">("users");
   const [registrationNavOpen, setRegistrationNavOpen] = useState(false);
   const [expenseCategoryForm, setExpenseCategoryForm] = useState(defaultExpenseCategoryForm);
+  const [expenseForm, setExpenseForm] = useState(defaultExpenseForm);
   const [userPageMode, setUserPageMode] = useState<"list" | "create">("list");
   const [userSearch, setUserSearch] = useState("");
   const [userPage, setUserPage] = useState(1);
@@ -330,6 +351,8 @@ function App() {
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [reportsNavOpen, setReportsNavOpen] = useState(false);
   const [reportMode, setReportMode] = useState<ReportMode>("tenants");
+  const [reportPage, setReportPage] = useState(1);
+  const [reportPageSize, setReportPageSize] = useState(10);
   const [view, setView] = useState<View>("home");
   const [selectedBuildingID, setSelectedBuildingID] = useState(
     () => localStorage.getItem("masco-building-id") ?? "hq",
@@ -371,11 +394,11 @@ function App() {
     if (path === "/payments/new") setPaymentPageMode("create");
     if (path === "/buildings") setBuildingPageMode("list");
     if (path === "/buildings/new") setBuildingPageMode("create");
-    if (path === "/reports/tenants") setReportMode("tenants");
-    if (path === "/reports/transactions") setReportMode("transactions");
-    if (path === "/reports/expenses") setReportMode("expenses");
-    if (path === "/reports/cash-flow") setReportMode("cashflow");
-    if (path === "/reports/monthly-rent") setReportMode("rent");
+    if (path === "/reports/tenants") { setReportMode("tenants"); setReportPage(1); }
+    if (path === "/reports/transactions") { setReportMode("transactions"); setReportPage(1); }
+    if (path === "/reports/expenses") { setReportMode("expenses"); setReportPage(1); }
+    if (path === "/reports/cash-flow") { setReportMode("cashflow"); setReportPage(1); }
+    if (path === "/reports/monthly-rent") { setReportMode("rent"); setReportPage(1); }
   };
 
   const logout = () => {
@@ -439,13 +462,14 @@ function App() {
     try {
       const contextQuery =
         selectedBuildingID === "hq" ? "" : `?building_id=${selectedBuildingID}`;
-      const [buildingData, tenantData, contractData, invoiceData, paymentData] =
+      const [buildingData, tenantData, contractData, invoiceData, paymentData, expenseData] =
         await Promise.all([
           readData("/buildings"),
           readData(`/tenants${contextQuery}`),
           readData(`/contracts${contextQuery}`),
           readData(`/invoices${contextQuery}`),
           readData(`/payments${contextQuery}`),
+          readData(`/expenses${contextQuery}`),
         ]);
 
       const nextBuildings = (buildingData.data ?? []) as BuildingRecord[];
@@ -463,6 +487,7 @@ function App() {
       setContracts((contractData.data ?? []) as ContractRecord[]);
       setInvoices((invoiceData.data ?? []) as InvoiceRecord[]);
       setPayments((paymentData.data ?? []) as PaymentRecord[]);
+      setExpenses((expenseData.data ?? []) as ExpenseRecord[]);
     } catch {
       await Swal.fire({
         icon: "error",
@@ -1314,6 +1339,28 @@ function App() {
     void showSuccess("Expense category saved");
   };
 
+  const handleExpenseSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const response = await apiFetch("/expenses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...expenseForm,
+        building_id: Number(expenseForm.building_id || selectedBuildingID),
+        category_id: Number(expenseForm.category_id),
+        amount: amountNumber(expenseForm.amount),
+      }),
+    });
+    if (!response.ok) {
+      await showRequestError(response, "Could not record expense.");
+      return;
+    }
+    const created = (await response.json()) as ExpenseRecord;
+    setExpenses((current) => [created, ...current]);
+    setExpenseForm(defaultExpenseForm);
+    void showSuccess("Expense recorded");
+  };
+
   const handleCreateRole = async (event: FormEvent) => {
     event.preventDefault();
     const response = await apiFetch("/auth/roles", {
@@ -1809,6 +1856,11 @@ function App() {
       selectedBuildingID === "hq" ||
       payment.building_id === Number(selectedBuildingID),
   );
+  const scopedExpenses = expenses.filter(
+    (expense) =>
+      selectedBuildingID === "hq" ||
+      Number(expense.building_id) === Number(selectedBuildingID),
+  );
   const paymentsToday = scopedPayments.filter(
     (payment) => payment.payment_date === today.toISOString().slice(0, 10),
   );
@@ -1824,7 +1876,13 @@ function App() {
     (total, payment) => total + payment.amount,
     0,
   );
+  const totalExpenses = scopedExpenses.reduce(
+    (total, expense) => total + expense.amount,
+    0,
+  );
   const totalOutstanding = Math.max(0, totalInvoiced - totalPaid);
+  const reportSlice = <T,>(rows: T[]) => rows.slice((reportPage - 1) * reportPageSize, reportPage * reportPageSize);
+  const reportPageCount = (rows: unknown[]) => Math.max(1, Math.ceil(rows.length / reportPageSize));
   const branchCards = buildings.map((building) => {
     const branchContracts = contracts.filter(
       (contract) => String(contract.building_id) === String(building.id),
@@ -2798,47 +2856,71 @@ function App() {
                 {selectedBuildingID === "hq" ? "Portfolio-wide statements for administration and owner review." : "Building-level statements for daily property operations."}
               </p>
             </div>
+            <div className="report-controls">
+              <select value={reportPageSize} onChange={(event) => { setReportPageSize(Number(event.target.value)); setReportPage(1); }}>
+                <option value="10">10 entries</option>
+                <option value="25">25 entries</option>
+                <option value="50">50 entries</option>
+              </select>
+            </div>
+            {reportMode === "expenses" && (
+              <form className="panel form-panel report-expense-form" onSubmit={handleExpenseSubmit}>
+                <div className="section-heading"><h2>Record expense</h2><span>{selectedBuildingID === "hq" ? "All buildings" : selectedBuilding?.name}</span></div>
+                <div className="inline-fields">
+                  {selectedBuildingID === "hq" && <label>Building<select value={expenseForm.building_id} onChange={(event) => setExpenseForm((current) => ({ ...current, building_id: event.target.value }))} required><option value="">Select building</option>{buildings.map((building) => <option key={building.id} value={building.id}>{building.name}</option>)}</select></label>}
+                  <label>Category<select value={expenseForm.category_id} onChange={(event) => setExpenseForm((current) => ({ ...current, category_id: event.target.value }))} required><option value="">Select category</option>{expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+                  <label>Amount<input inputMode="decimal" value={expenseForm.amount} onChange={(event) => setExpenseForm((current) => ({ ...current, amount: formatAmount(event.target.value) }))} required /></label>
+                  <label>Date<input type="date" value={expenseForm.expense_date} onChange={(event) => setExpenseForm((current) => ({ ...current, expense_date: event.target.value }))} required /></label>
+                </div>
+                <div className="inline-fields"><label>Reference<input value={expenseForm.reference} onChange={(event) => setExpenseForm((current) => ({ ...current, reference: event.target.value }))} /></label><label>Notes<input value={expenseForm.notes} onChange={(event) => setExpenseForm((current) => ({ ...current, notes: event.target.value }))} /></label></div>
+                <button className="primary-button" type="submit">Save expense</button>
+              </form>
+            )}
             {reportMode === "tenants" && (
               <div className="panel list-panel report-panel">
                 <div className="section-heading"><h2>{selectedBuildingID === "hq" ? "All tenants by building" : "Tenant statement"}</h2><span>{tenants.length} entries</span></div>
                 <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>No.</th><th>Tenant</th><th>Phone</th>{selectedBuildingID === "hq" && <th>Building</th>}<th>Units</th><th>Active contracts</th><th>Total rent</th></tr></thead><tbody>
-                  {tenants.length === 0 ? <tr><td colSpan={selectedBuildingID === "hq" ? 7 : 6}>No tenants found.</td></tr> : tenants.map((tenant, index) => {
+                  {tenants.length === 0 ? <tr><td colSpan={selectedBuildingID === "hq" ? 7 : 6}>No tenants found.</td></tr> : reportSlice(tenants).map((tenant, index) => {
                     const tenantContracts = contracts.filter((contract) => String(contract.tenant_id) === String(tenant.id) && contract.status === "Active");
                     const tenantUnits = tenantContracts.map((contract) => units.find((unit) => String(unit.id) === String(contract.unit_id))?.number).filter(Boolean);
                     const building = buildings.find((item) => String(item.id) === String(tenant.building_id));
-                    return <tr key={tenant.id}><td>{index + 1}</td><td>{tenant.full_name || tenant.company_name || "Unnamed tenant"}</td><td>{tenant.phone || "-"}</td>{selectedBuildingID === "hq" && <td>{building?.name || "-"}</td>}<td>{tenantUnits.length ? tenantUnits.join(", ") : "-"}</td><td>{tenantContracts.length}</td><td>{formatAmount(tenantContracts.reduce((total, contract) => total + contract.monthly_rent, 0))}</td></tr>;
+                    return <tr key={tenant.id}><td>{(reportPage - 1) * reportPageSize + index + 1}</td><td>{tenant.full_name || tenant.company_name || "Unnamed tenant"}</td><td>{tenant.phone || "-"}</td>{selectedBuildingID === "hq" && <td>{building?.name || "-"}</td>}<td>{tenantUnits.length ? tenantUnits.join(", ") : "-"}</td><td>{tenantContracts.length}</td><td>{formatAmount(tenantContracts.reduce((total, contract) => total + contract.monthly_rent, 0))}</td></tr>;
                   })}
                 </tbody></table></div>
+                <div className="pagination"><span>Showing {reportSlice(tenants).length ? (reportPage - 1) * reportPageSize + 1 : 0} to {Math.min(reportPage * reportPageSize, tenants.length)} of {tenants.length}</span><div><button type="button" disabled={reportPage === 1} onClick={() => setReportPage((page) => page - 1)}>Previous</button><strong>{reportPage}</strong><button type="button" disabled={reportPage >= reportPageCount(tenants)} onClick={() => setReportPage((page) => page + 1)}>Next</button></div></div>
               </div>
             )}
             {reportMode === "transactions" && (
               <div className="panel list-panel report-panel">
                 <div className="section-heading"><h2>Transaction statement</h2><span>Total {formatAmount(scopedPayments.reduce((total, payment) => total + payment.amount, 0))}</span></div>
                 <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>No.</th><th>Date</th><th>Tenant</th><th>Unit</th><th>Invoice</th><th>Reference</th><th>Method</th><th>Amount</th></tr></thead><tbody>
-                  {scopedPayments.length === 0 ? <tr><td colSpan={8}>No transactions recorded.</td></tr> : scopedPayments.map((payment, index) => { const tenant = tenants.find((item) => String(item.id) === String(payment.tenant_id)); const unit = units.find((item) => String(item.id) === String(payment.unit_id)); const invoice = invoices.find((item) => String(item.id) === String(payment.invoice_id)); return <tr key={payment.id}><td>{index + 1}</td><td>{dateOnly(payment.payment_date)}</td><td>{tenant?.full_name || tenant?.company_name || "-"}</td><td>{unit?.number || "-"}</td><td>{invoice?.number || payment.invoice_id}</td><td>{payment.payment_reference}</td><td>{payment.payment_method}</td><td>{formatAmount(payment.amount)}</td></tr>; })}
+                  {scopedPayments.length === 0 ? <tr><td colSpan={8}>No transactions recorded.</td></tr> : reportSlice(scopedPayments).map((payment, index) => { const tenant = tenants.find((item) => String(item.id) === String(payment.tenant_id)); const unit = units.find((item) => String(item.id) === String(payment.unit_id)); const invoice = invoices.find((item) => String(item.id) === String(payment.invoice_id)); return <tr key={payment.id}><td>{(reportPage - 1) * reportPageSize + index + 1}</td><td>{dateOnly(payment.payment_date)}</td><td>{tenant?.full_name || tenant?.company_name || "-"}</td><td>{unit?.number || "-"}</td><td>{invoice?.number || payment.invoice_id}</td><td>{payment.payment_reference}</td><td>{payment.payment_method}</td><td>{formatAmount(payment.amount)}</td></tr>; })}
                 </tbody></table></div>
+                <div className="pagination"><span>Showing {reportSlice(scopedPayments).length ? (reportPage - 1) * reportPageSize + 1 : 0} to {Math.min(reportPage * reportPageSize, scopedPayments.length)} of {scopedPayments.length}</span><div><button type="button" disabled={reportPage === 1} onClick={() => setReportPage((page) => page - 1)}>Previous</button><strong>{reportPage}</strong><button type="button" disabled={reportPage >= reportPageCount(scopedPayments)} onClick={() => setReportPage((page) => page + 1)}>Next</button></div></div>
               </div>
             )}
             {reportMode === "expenses" && (
               <div className="panel list-panel report-panel">
-                <div className="section-heading"><h2>Expenses statement</h2><span>{expenseCategories.length} categories</span></div>
-                <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>No.</th><th>Category</th><th>Recorded amount</th></tr></thead><tbody>
-                  {expenseCategories.length === 0 ? <tr><td colSpan={3}>No expense categories registered.</td></tr> : expenseCategories.map((category, index) => <tr key={category.id}><td>{index + 1}</td><td>{category.name}</td><td>{formatAmount(0)}</td></tr>)}
-                </tbody><tfoot><tr><td colSpan={2}>Total expenses</td><td>{formatAmount(0)}</td></tr></tfoot></table></div>
+                <div className="section-heading"><h2>Expenses statement</h2><span>Total {formatAmount(totalExpenses)}</span></div>
+                <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>No.</th><th>Date</th><th>Building</th><th>Category</th><th>Reference</th><th>Notes</th><th>Amount</th></tr></thead><tbody>
+                  {scopedExpenses.length === 0 ? <tr><td colSpan={7}>No expenses recorded.</td></tr> : reportSlice(scopedExpenses).map((expense, index) => { const category = expenseCategories.find((item) => String(item.id) === String(expense.category_id)); const building = buildings.find((item) => String(item.id) === String(expense.building_id)); return <tr key={expense.id}><td>{(reportPage - 1) * reportPageSize + index + 1}</td><td>{dateOnly(expense.expense_date)}</td><td>{building?.name || "-"}</td><td>{category?.name || "-"}</td><td>{expense.reference || "-"}</td><td>{expense.notes || "-"}</td><td>{formatAmount(expense.amount)}</td></tr>; })}
+                </tbody><tfoot><tr><td colSpan={6}>Total expenses</td><td>{formatAmount(totalExpenses)}</td></tr></tfoot></table></div>
+                <div className="pagination"><span>Showing {reportSlice(scopedExpenses).length ? (reportPage - 1) * reportPageSize + 1 : 0} to {Math.min(reportPage * reportPageSize, scopedExpenses.length)} of {scopedExpenses.length}</span><div><button type="button" disabled={reportPage === 1} onClick={() => setReportPage((page) => page - 1)}>Previous</button><strong>{reportPage}</strong><button type="button" disabled={reportPage >= reportPageCount(scopedExpenses)} onClick={() => setReportPage((page) => page + 1)}>Next</button></div></div>
               </div>
             )}
             {reportMode === "cashflow" && (
               <div className="panel list-panel report-panel">
-                <div className="section-heading"><h2>Cash flow statement</h2><span>Net {formatAmount(totalPaid)}</span></div>
-                <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>Type</th><th>Description</th><th>Inflow</th><th>Outflow</th><th>Net</th></tr></thead><tbody><tr><td>Income</td><td>Rent and invoice payments</td><td>{formatAmount(totalPaid)}</td><td>{formatAmount(0)}</td><td>{formatAmount(totalPaid)}</td></tr><tr><td>Expense</td><td>Recorded expenses</td><td>{formatAmount(0)}</td><td>{formatAmount(0)}</td><td>{formatAmount(0)}</td></tr></tbody><tfoot><tr><td colSpan={2}>Net cash flow</td><td>{formatAmount(totalPaid)}</td><td>{formatAmount(0)}</td><td>{formatAmount(totalPaid)}</td></tr></tfoot></table></div>
+                <div className="section-heading"><h2>Cash flow statement</h2><span>Net {formatAmount(totalPaid - totalExpenses)}</span></div>
+                <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>Type</th><th>Description</th><th>Inflow</th><th>Outflow</th><th>Net</th></tr></thead><tbody><tr><td>Income</td><td>Rent and invoice payments</td><td>{formatAmount(totalPaid)}</td><td>{formatAmount(0)}</td><td>{formatAmount(totalPaid)}</td></tr><tr><td>Expense</td><td>Recorded expenses</td><td>{formatAmount(0)}</td><td>{formatAmount(totalExpenses)}</td><td>{formatAmount(-totalExpenses)}</td></tr></tbody><tfoot><tr><td colSpan={2}>Net cash flow</td><td>{formatAmount(totalPaid)}</td><td>{formatAmount(totalExpenses)}</td><td>{formatAmount(totalPaid - totalExpenses)}</td></tr></tfoot></table></div>
               </div>
             )}
             {reportMode === "rent" && (
               <div className="panel list-panel report-panel">
                 <div className="section-heading"><h2>Monthly rent report</h2><span>Total {formatAmount(totalContractRent)}</span></div>
                 <div className="unit-table-wrap"><table className="unit-table report-table"><thead><tr><th>No.</th><th>Tenant</th><th>Unit</th><th>Start</th><th>End</th><th>Monthly rent</th><th>Status</th></tr></thead><tbody>
-                  {scopedContracts.length === 0 ? <tr><td colSpan={7}>No contracts found.</td></tr> : scopedContracts.map((contract, index) => { const tenant = tenants.find((item) => String(item.id) === String(contract.tenant_id)); const unit = units.find((item) => String(item.id) === String(contract.unit_id)); return <tr key={contract.id}><td>{index + 1}</td><td>{tenant?.full_name || tenant?.company_name || "-"}</td><td>{unit?.number || "-"}</td><td>{dateOnly(contract.start_date)}</td><td>{dateOnly(contract.end_date)}</td><td>{formatAmount(contract.monthly_rent)}</td><td><span className={`table-status ${contract.status.toLowerCase()}`}>{contract.status}</span></td></tr>; })}
+                  {scopedContracts.length === 0 ? <tr><td colSpan={7}>No contracts found.</td></tr> : reportSlice(scopedContracts).map((contract, index) => { const tenant = tenants.find((item) => String(item.id) === String(contract.tenant_id)); const unit = units.find((item) => String(item.id) === String(contract.unit_id)); return <tr key={contract.id}><td>{(reportPage - 1) * reportPageSize + index + 1}</td><td>{tenant?.full_name || tenant?.company_name || "-"}</td><td>{unit?.number || "-"}</td><td>{dateOnly(contract.start_date)}</td><td>{dateOnly(contract.end_date)}</td><td>{formatAmount(contract.monthly_rent)}</td><td><span className={`table-status ${contract.status.toLowerCase()}`}>{contract.status}</span></td></tr>; })}
                 </tbody><tfoot><tr><td colSpan={5}>Total monthly rent</td><td>{formatAmount(totalContractRent)}</td><td></td></tr></tfoot></table></div>
+                <div className="pagination"><span>Showing {reportSlice(scopedContracts).length ? (reportPage - 1) * reportPageSize + 1 : 0} to {Math.min(reportPage * reportPageSize, scopedContracts.length)} of {scopedContracts.length}</span><div><button type="button" disabled={reportPage === 1} onClick={() => setReportPage((page) => page - 1)}>Previous</button><strong>{reportPage}</strong><button type="button" disabled={reportPage >= reportPageCount(scopedContracts)} onClick={() => setReportPage((page) => page + 1)}>Next</button></div></div>
               </div>
             )}
           </div>

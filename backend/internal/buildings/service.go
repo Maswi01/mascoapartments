@@ -28,13 +28,14 @@ type Service struct {
 	payments          map[uint64]*Payment
 	documents         map[uint64]*Document
 	expenseCategories map[uint64]*ExpenseCategory
+	expenses          map[uint64]*Expense
 }
 
 func NewService() *Service {
 	return &Service{
 		buildings: map[uint64]*Building{}, floors: map[uint64]*Floor{}, units: map[uint64]*Unit{},
 		tenants: map[uint64]*Tenant{}, contracts: map[uint64]*Contract{}, invoices: map[uint64]*Invoice{},
-		payments: map[uint64]*Payment{}, documents: map[uint64]*Document{}, expenseCategories: map[uint64]*ExpenseCategory{},
+		payments: map[uint64]*Payment{}, documents: map[uint64]*Document{}, expenseCategories: map[uint64]*ExpenseCategory{}, expenses: map[uint64]*Expense{},
 	}
 }
 
@@ -448,6 +449,27 @@ func (s *Service) ListExpenseCategories() []*ExpenseCategory {
 	items := make([]*ExpenseCategory, 0, len(s.expenseCategories))
 	for _, category := range s.expenseCategories {
 		items = append(items, category)
+	}
+	return items
+}
+
+func (s *Service) CreateExpense(expense Expense) (*Expense, error) {
+	if expense.BuildingID == 0 || expense.CategoryID == 0 || expense.Amount <= 0 || expense.ExpenseDate == "" {
+		return nil, errors.New("building, category, amount, and date are required")
+	}
+	expense.ID = uint64(len(s.expenses) + 1)
+	expense.CreatedAt = time.Now()
+	s.expenses[expense.ID] = &expense
+	return s.expenses[expense.ID], nil
+}
+
+func (s *Service) ListExpenses(buildingID uint64) []*Expense {
+	items := make([]*Expense, 0, len(s.expenses))
+	for _, expense := range s.expenses {
+		if buildingID != 0 && expense.BuildingID != buildingID {
+			continue
+		}
+		items = append(items, expense)
 	}
 	return items
 }

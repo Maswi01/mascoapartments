@@ -131,3 +131,14 @@ type ExpenseCategory struct {
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+type Expense struct {
+	ID          uint64    `json:"id"`
+	BuildingID  uint64    `json:"building_id"`
+	CategoryID  uint64    `json:"category_id"`
+	Amount      float64   `json:"amount"`
+	ExpenseDate string    `json:"expense_date"`
+	Reference   string    `json:"reference,omitempty"`
+	Notes       string    `json:"notes,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}

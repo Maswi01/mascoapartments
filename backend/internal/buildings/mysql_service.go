@@ -21,6 +21,18 @@ func NewMySQLService(db *sql.DB) *MySQLService {
 	)`); err != nil {
 		log.Printf("ensure expense_categories table: %v", err)
 	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS expenses (
+		id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+		building_id BIGINT UNSIGNED NOT NULL,
+		category_id BIGINT UNSIGNED NOT NULL,
+		amount DECIMAL(12,2) NOT NULL,
+		expense_date DATE NOT NULL,
+		reference VARCHAR(191) NULL,
+		notes TEXT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`); err != nil {
+		log.Printf("ensure expenses table: %v", err)
+	}
 	return &MySQLService{db: db}
 }
 
@@ -590,6 +602,53 @@ func (s *MySQLService) ListExpenseCategories() []*ExpenseCategory {
 	for rows.Next() {
 		item := &ExpenseCategory{}
 		if rows.Scan(&item.ID, &item.Name, &item.CreatedAt) == nil {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+func (s *MySQLService) CreateExpense(expense Expense) (*Expense, error) {
+	if expense.BuildingID == 0 || expense.CategoryID == 0 || expense.Amount <= 0 || expense.ExpenseDate == "" {
+		return nil, errors.New("building, category, amount, and date are required")
+	}
+	result, err := s.db.Exec(`INSERT INTO expenses (building_id, category_id, amount, expense_date, reference, notes) VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''))`, expense.BuildingID, expense.CategoryID, expense.Amount, expense.ExpenseDate, expense.Reference, expense.Notes)
+	if err != nil {
+		return nil, fmt.Errorf("save expense: %w", err)
+	}
+	expense.ID, err = databaseID(result)
+	if err != nil {
+		return nil, fmt.Errorf("read expense id: %w", err)
+	}
+	return s.getExpense(expense.ID)
+}
+
+func (s *MySQLService) getExpense(id uint64) (*Expense, error) {
+	item := &Expense{}
+	err := s.db.QueryRow(`SELECT id, building_id, category_id, amount, expense_date, COALESCE(reference, ''), COALESCE(notes, ''), created_at FROM expenses WHERE id = ?`, id).Scan(&item.ID, &item.BuildingID, &item.CategoryID, &item.Amount, &item.ExpenseDate, &item.Reference, &item.Notes, &item.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("read expense: %w", err)
+	}
+	return item, nil
+}
+
+func (s *MySQLService) ListExpenses(buildingID uint64) []*Expense {
+	query := `SELECT id, building_id, category_id, amount, expense_date, COALESCE(reference, ''), COALESCE(notes, ''), created_at FROM expenses`
+	args := []interface{}{}
+	if buildingID != 0 {
+		query += ` WHERE building_id = ?`
+		args = append(args, buildingID)
+	}
+	query += ` ORDER BY expense_date DESC, id DESC`
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return []*Expense{}
+	}
+	defer rows.Close()
+	items := make([]*Expense, 0)
+	for rows.Next() {
+		item := &Expense{}
+		if rows.Scan(&item.ID, &item.BuildingID, &item.CategoryID, &item.Amount, &item.ExpenseDate, &item.Reference, &item.Notes, &item.CreatedAt) == nil {
 			items = append(items, item)
 		}
 	}
